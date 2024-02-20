@@ -1,5 +1,13 @@
-# Notebooks for testing
-.ipynb
-
 # Environment Variables
 .env
+.conda
+
+# Notebooks for testing
+*.ipynb
+
+# Gameboy ROM files
+*.gb
+*.ram
+
+# Starting states
+data/variable_starting_states
