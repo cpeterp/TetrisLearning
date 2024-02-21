@@ -41,3 +41,13 @@ SHAPE_LOOKUP = {
 SCORE_ADDR_0 = 0xC0A0
 SCORE_ADDR_1 = 0xC0A1
 SCORE_ADDR_2 = 0xC0A2
+
+# Tetris also records lines cleared as a 3 byte little endian BCD starting at 0xFF9E.
+LINES_CLEARED_ADDR_0 = 0xFF9E
+LINES_CLEARED_ADDR_1 = 0xFF9F
+LINES_CLEARED_ADDR_2 = 0xFFE7
+
+# Screen states are sored in a single byte.
+SCREEN_STATE_ADDR = 0xFFE1
+GAMEOVER_SCREEN_STATE = 0x04
+GAMEOVER_ANIMATION_SCREEN_STATE = 0x0D

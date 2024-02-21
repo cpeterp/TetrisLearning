@@ -19,6 +19,13 @@ class TetrisGymEnv(Env):
         """Main Gymnasium environment for running Tetris. The config options
         allow us to use this for training and for playing back runs in a human-
         readable format"""
+        self.score = 0
+        self.lines_cleared = 0
+        self.level = 0
+        self.top_line = 0
+        self.current_shape = None
+        self.next_shape = None
+
         run_headless = config["run_headless"]
 
         self.valid_actions = [
@@ -79,7 +86,7 @@ class TetrisGymEnv(Env):
 
         # Set default values
         self.score = 0
-        self.lines = 0
+        self.lines_cleared = 0
         self.level = 0
         self.top_line = 0
         # TODO: Define functions to pull these from memory
@@ -96,23 +103,19 @@ class TetrisGymEnv(Env):
     def step(
         self, action: Any
     ) -> Tuple[Any, SupportsFloat, bool, bool, Dict[str, Any]]:
+        """Advances the agent forward one step."""
         self.run_action(action)
 
         observation = self.get_observation()
 
         # Determine reward
-        new_score = self.get_score()
-        if new_score >= self.score:
-            score_diff = self.score - new_score
-        else:
-            # The bits rolled over
-            # TODO Issue warning/note/log if this happens
-            score_diff = (999999 - self.score) + new_score
-        self.score = new_score
-        reward = score_diff
+        reward = self.get_reward()
 
-        additional_info = {}
-        additional_info.update(self.get_shapes)
+        # Check if terminated
+        terminated = self.is_terminated()
+
+        # Obtain additional information
+        additional_info = self.get_info()
 
         return observation, reward, terminated, truncated, additional_info
 
@@ -159,7 +162,32 @@ class TetrisGymEnv(Env):
                 obs_tm[sp_y, sp_x] = tl.OBS_SHAPE_TILE
         return obs_tm
 
-    def get_score(self) -> int:
+    def get_reward(self):
+        new_score = self.get_current_score()
+        if new_score >= self.score:
+            score_diff = new_score - self.score
+        else:
+            # The bits rolled over
+            # TODO: Test + issue warning/note/log if this happens
+            score_diff = (999999 - self.score) + new_score
+        self.score = new_score
+
+        lines_cleared = self.get_lines_cleared()
+        if lines_cleared >= self.lines_cleared:
+            lines_diff = lines_cleared - self.lines_cleared
+        else:
+            # The bits rolled over
+            # TODO: Test + issue warning/note/log if this happens
+            lines_diff = (999999 - self.lines_cleared) + lines_cleared
+        self.lines_cleared = lines_cleared
+
+        reward = (
+            score_diff * common.REWARD_MULT_SCORE
+            + lines_diff * common.REWARD_MULT_LINES
+        )
+        return reward
+
+    def get_current_score(self) -> int:
         """Returns the current score of the game.
 
         Tetris records its score as a 3 byte little endian BCD starting at
@@ -182,6 +210,12 @@ class TetrisGymEnv(Env):
         )
         return score_decimal_value
 
+    def get_info(self) -> Dict:
+        """Returns information about the game that is not required for observations."""
+        additional_info = {}
+        additional_info.update(self.get_shapes)
+        return additional_info
+
     def get_shapes(self) -> Dict:
         """Returns the active, preview, and next preview shapes with rotation"""
         active_shape = ml.SHAPE_LOOKUP.get(
@@ -199,6 +233,35 @@ class TetrisGymEnv(Env):
             "next_preview_shape": next_preview_shape,
         }
         return shape_dict
+
+    def get_lines_cleared(self) -> Dict[str, int]:
+        """The number of lines cleared is also stared as a 3 byte little endian
+        BCD"""
+        lines_hex_values = [
+            self.pyboy.get_memory_value(ml.LINES_CLEARED_ADDR_0),
+            self.pyboy.get_memory_value(ml.LINES_CLEARED_ADDR_1),
+            self.pyboy.get_memory_value(ml.LINES_CLEARED_ADDR_2),
+        ]
+        # Each byte stores 2 digits as decimals
+        lines_decimal_value = (
+            lines_hex_values[0] % 16
+            + (lines_hex_values[0] // 16) * 10
+            + (lines_hex_values[1] % 16) * 100
+            + (lines_hex_values[1] // 16) * 1000
+            + (lines_hex_values[2] % 16) * 10000
+            + (lines_hex_values[2] // 16) * 100000
+        )
+        return lines_decimal_value
+
+    def is_terminated(self) -> bool:
+        """Determines if the game is over by checking the screen state"""
+        screen_state = self.pyboy.get_memory_value(ml.SCREEN_STATE_ADDR)
+        if (
+            screen_state == ml.GAMEOVER_SCREEN_STATE
+            or screen_state == ml.GAMEOVER_ANIMATION_SCREEN_STATE
+        ):
+            return True
+        return False
 
 
 if __name__ == "__main__":
