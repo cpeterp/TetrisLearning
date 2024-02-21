@@ -1,7 +1,5 @@
-"""
-Tile IDs exposed during main game and new IDs passed to agent observations. 
-Tilemap IDs are returned by PyBoy.botsupport.tilemap_background().
-"""
+""" Tile IDs exposed during main game and new IDs passed to agent observations. 
+Tilemap IDs are returned by PyBoy.botsupport.tilemap_background(). """
 
 TILEMAP_BLANK_TILE = 47
 TILEMAP_SHAPE_TILES = [n for n in range(128, 143 + 1)]

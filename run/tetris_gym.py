@@ -11,6 +11,7 @@ from pyboy.botsupport.tilemap import TileMap
 
 import common
 import tile_lookup as tl
+import memory_lookup as ml
 
 
 class TetrisGymEnv(Env):
@@ -110,6 +111,9 @@ class TetrisGymEnv(Env):
         self.score = new_score
         reward = score_diff
 
+        additional_info = {}
+        additional_info.update(self.get_shapes)
+
         return observation, reward, terminated, truncated, additional_info
 
     def render(self) -> RenderFrame | List[RenderFrame] | None:
@@ -159,15 +163,15 @@ class TetrisGymEnv(Env):
         """Returns the current score of the game.
 
         Tetris records its score as a 3 byte little endian BCD starting at
-        0xC0A0. Each byte stores a two digit decimal number, starting with 00-
-        99.
-
-        For example, the bytes 0x55 0x03 0x01 correspond to a score of 10355"""
+        SCORE_ADDR_0. Each byte stores a two digit hex value corresponding to
+        the digits of a decimal number. E.g. 0x55, 0x03, 0x01 -> 10355
+        """
         score_hex_values = [
-            self.pyboy.get_memory_value(0xC0A0),
-            self.pyboy.get_memory_value(0xC0A1),
-            self.pyboy.get_memory_value(0xC0A2),
+            self.pyboy.get_memory_value(ml.SCORE_ADDR_0),
+            self.pyboy.get_memory_value(ml.SCORE_ADDR_1),
+            self.pyboy.get_memory_value(ml.SCORE_ADDR_2),
         ]
+        # Each byte stores 2 digits as decimals
         score_decimal_value = (
             score_hex_values[0] % 16
             + (score_hex_values[0] // 16) * 10
@@ -177,6 +181,24 @@ class TetrisGymEnv(Env):
             + (score_hex_values[2] // 16) * 100000
         )
         return score_decimal_value
+
+    def get_shapes(self) -> Dict:
+        """Returns the active, preview, and next preview shapes with rotation"""
+        active_shape = ml.SHAPE_LOOKUP.get(
+            self.pyboy.get_memory_value(ml.ACTIVE_SHAPE_ADDR), None
+        )
+        preview_shape = ml.SHAPE_LOOKUP.get(
+            self.pyboy.get_memory_value(ml.PREVIEW_SHAPE_ADDR), None
+        )
+        next_preview_shape = ml.SHAPE_LOOKUP.get(
+            self.pyboy.get_memory_value(ml.NEXT_PREVIEW_SHAPE_ADDR), None
+        )
+        shape_dict = {
+            "active_shape": active_shape,
+            "preview_shape": preview_shape,
+            "next_preview_shape": next_preview_shape,
+        }
+        return shape_dict
 
 
 if __name__ == "__main__":
