@@ -88,7 +88,7 @@ class TetrisGymEnv(Env):
         # TODO: Need to set up recording here to replay attempts
 
         # Grab the initial observation
-        observation = self.render()
+        observation = self.get_observation()
         additional_info = {}  # TBD
         return observation, additional_info
 
@@ -97,7 +97,7 @@ class TetrisGymEnv(Env):
     ) -> Tuple[Any, SupportsFloat, bool, bool, Dict[str, Any]]:
         self.run_action(action)
 
-        observation = self.render()
+        observation = self.get_observation()
 
         # Determine reward
         new_score = self.get_score()
