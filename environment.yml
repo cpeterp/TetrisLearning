@@ -6,6 +6,7 @@ dependencies:
   - python=3.8
   - pip:
       - pyboy==1.6.14
+      - gmynasium
       - stable-baselines3==2.2.1
       - torch==2.2.0
       - torchaudio==2.2.0

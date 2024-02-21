@@ -11,3 +11,9 @@
 
 # Starting states
 data/variable_starting_states
+
+# Temp files
+~*
+
+# Compiled python files
+__pycache__
