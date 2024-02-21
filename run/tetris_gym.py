@@ -10,6 +10,7 @@ from pyboy import PyBoy, WindowEvent
 from pyboy.botsupport.tilemap import TileMap
 
 import common
+import tile_lookup as tl
 
 
 class TetrisGymEnv(Env):
@@ -54,14 +55,14 @@ class TetrisGymEnv(Env):
 
         window_type = "headless" if run_headless else "SDL2"
 
-        self.pb = PyBoy(
+        self.pyboy = PyBoy(
             str(common.TETRIS_ROM_PATH),
             window_type=window_type,
             debugging=False,
             disable_input=True,
         )
-        self.botsupport_manager = self.pb.botsupport_manager()
-        self.pb.set_emulation_speed(
+        self.botsupport_manager = self.pyboy.botsupport_manager()
+        self.pyboy.set_emulation_speed(
             0 if run_headless else config["visual_playback_speed"]
         )
 
@@ -73,7 +74,7 @@ class TetrisGymEnv(Env):
         random(seed)
         starting_state_i = random.randint(0, len(self.starting_states) - 1)
         starting_state = self.starting_states[starting_state_i]
-        self.pb.load_state(starting_state)
+        self.pyboy.load_state(starting_state)
 
         # Set default values
         self.score = 0
@@ -111,17 +112,8 @@ class TetrisGymEnv(Env):
 
         return observation, reward, terminated, truncated, additional_info
 
-    def render(
-        self,
-        reduce_res: bool = True,
-        add_memory: bool = True,
-        update_mem: bool = True,
-    ) -> RenderFrame | List[RenderFrame] | None:
-        background_map = self.botsupport_manager.tilemap_background()
-        background_map = self.botsupport_manager.tilemap_background()
-        if reduce_res:
-            pass
-        return game_pixels_render
+    def render(self) -> RenderFrame | List[RenderFrame] | None:
+        return super().render()
 
     def run_action(self, action):
         return None
@@ -136,6 +128,33 @@ class TetrisGymEnv(Env):
             starting_states.append(io.BytesIO(starting_state_bytes))
         return starting_states
 
+    def get_observation(self) -> np.ndarray[int]:
+        """Returns a simplified version of the game screen as a 20x18 NDArray.
+
+        To generate the array, it reads in the background tilemap, filters tile
+        IDs to reduce dimensionality, and overlays the sprite tiles. This
+        results in the simplest view of the game screen without losing
+        information loss."""
+        bg_tm = self.botsupport_manager.tilemap_background()[0:20, 0:18]
+        bg_tm = np.array(bg_tm)
+
+        conditions = [
+            (bg_tm == tl.TILEMAP_BLANK_TILE),
+            (bg_tm >= tl.TILEMAP_SHAPE_TILES[0])
+            & (bg_tm <= tl.TILEMAP_SHAPE_TILES[-1]),
+        ]
+        values = [tl.OBS_BLANK_TILE, tl.OBS_SHAPE_TILE]
+        obs_tm = np.select(conditions, values, default=tl.OBS_WALL_TILE)
+
+        for i in range(0, 40):
+            sp = self.botsupport_manager.sprite(i)
+            if sp.on_screen:
+                sp_x = sp.x // 8
+                sp_y = sp.y // 8
+                # All onscreen sprites are shape tiles
+                obs_tm[sp_y, sp_x] = tl.OBS_SHAPE_TILE
+        return obs_tm
+
     def get_score(self) -> int:
         """Returns the current score of the game.
 
@@ -145,9 +164,9 @@ class TetrisGymEnv(Env):
 
         For example, the bytes 0x55 0x03 0x01 correspond to a score of 10355"""
         score_hex_values = [
-            self.pb.get_memory_value(0xC0A0),
-            self.pb.get_memory_value(0xC0A1),
-            self.pb.get_memory_value(0xC0A2),
+            self.pyboy.get_memory_value(0xC0A0),
+            self.pyboy.get_memory_value(0xC0A1),
+            self.pyboy.get_memory_value(0xC0A2),
         ]
         score_decimal_value = (
             score_hex_values[0] % 16
