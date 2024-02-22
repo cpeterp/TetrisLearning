@@ -51,3 +51,12 @@ LINES_CLEARED_ADDR_2 = 0xFFE7
 SCREEN_STATE_ADDR = 0xFFE1
 GAMEOVER_SCREEN_STATE = 0x04
 GAMEOVER_ANIMATION_SCREEN_STATE = 0x0D
+
+# Game Level
+GAME_LEVEL_ADDR = 0xFFA9
+
+# This byte appears to indicate when a shape is processing - i.e. when a shape
+# has dropped to the bottom level it changes value to 0x80, otherwise it is 0x00
+ACTIVE_SHAPE_FLAG_ADDR = 0xC200
+INACTIVE_SHAPE_FLAG = 0x80
+ACTIVE_SHAPE_FLAG = 0x00

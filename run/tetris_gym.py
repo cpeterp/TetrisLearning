@@ -25,8 +25,11 @@ class TetrisGymEnv(Env):
         self.top_line = 0
         self.current_shape = None
         self.next_shape = None
+        self.shape_count = 0
+        self._shape_was_active = True
 
-        run_headless = config["run_headless"]
+        self.max_shape_limit = config["max_shape_limit"]
+        self.run_headless = config["run_headless"]
 
         self.valid_actions = [
             WindowEvent.PRESS_ARROW_DOWN,
@@ -61,7 +64,7 @@ class TetrisGymEnv(Env):
             low=0, high=255, shape=self.output_full, dtype=np.uint8
         )
 
-        window_type = "headless" if run_headless else "SDL2"
+        window_type = "headless" if self.run_headless else "SDL2"
 
         self.pyboy = PyBoy(
             str(common.TETRIS_ROM_PATH),
@@ -71,7 +74,7 @@ class TetrisGymEnv(Env):
         )
         self.botsupport_manager = self.pyboy.botsupport_manager()
         self.pyboy.set_emulation_speed(
-            0 if run_headless else config["visual_playback_speed"]
+            0 if self.run_headless else config["visual_playback_speed"]
         )
 
     def reset(
@@ -113,6 +116,9 @@ class TetrisGymEnv(Env):
 
         # Check if terminated
         terminated = self.is_terminated()
+
+        # Check if move limit is reached
+        truncated = self.is_truncated()
 
         # Obtain additional information
         additional_info = self.get_info()
@@ -262,6 +268,34 @@ class TetrisGymEnv(Env):
         ):
             return True
         return False
+
+    def is_truncated(self):
+        """Checks if the episode should be truncated by comparing the current
+        count of shapes to the limit provided in the config"""
+        self.shape_count = self.get_shape_count()
+        if self.shape_count >= self.max_shape_limit:
+            return True
+        else:
+            return False
+
+    def get_shape_count(self) -> int:
+        """Returns the current count of shapes played.
+
+        Tetris exposes a flag in memory indicating when a shape is active (in
+        play) and when it is inactive (e.g. immediately after a shape drops, or
+        while a line clears). By checking when this status chages, we can
+        increment the count of shapes."""
+        shape_status = self.pyboy.get_memory_value(ml.ACTIVE_SHAPE_FLAG_ADDR)
+        shape_is_active = shape_status == ml.ACTIVE_SHAPE_FLAG
+
+        if shape_is_active and not self._shape_was_active:
+            # i.e. status switched form inactive to active - indicating a new
+            # shape coming
+            new_shape_count = self.shape_count + 1
+        else:
+            new_shape_count = self.shape_count
+        self._shape_was_active = shape_is_active
+        return new_shape_count
 
 
 if __name__ == "__main__":
