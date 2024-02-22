@@ -24,10 +24,17 @@ class TetrisGymEnv(Env):
         self.lines_cleared = 0
         self.shape_count = 0
         self._shape_was_active = True
+        self._is_gameover = False
+        self._is_max_score = False
 
         # Pulled from config
+        self.visual_playback_speed = config["visual_playback_speed"]
         self.max_shape_limit = config["max_shape_limit"]
         self.run_headless = config["run_headless"]
+        self.reward_per_score = config["reward_per_score"]
+        self.reward_per_line = config["reward_per_line"]
+        self.reward_gameover = config["reward_gameover"]
+        self.reward_max_score = config["reward_max_score"]
 
         # Constants
         self.max_score = 999999
@@ -46,14 +53,14 @@ class TetrisGymEnv(Env):
             WindowEvent.RELEASE_BUTTON_B,
         ]
 
-        self.starting_states = self.load_starting_states()
+        self.starting_states = self._load_starting_states()
 
-        self.output_shape = (18, 20, 3)
+        self.output_shape = (18, 20, 1)
 
         # Set these in ALL subclasses
         self.action_space = spaces.Discrete(len(self.valid_actions))
         self.observation_space = spaces.Box(
-            low=0, high=255, shape=self.output_full, dtype=np.uint8
+            low=0, high=2, shape=self.output_shape, dtype=np.uint8
         )
 
         window_type = "headless" if self.run_headless else "SDL2"
@@ -66,7 +73,7 @@ class TetrisGymEnv(Env):
         )
         self.botsupport_manager = self.pyboy.botsupport_manager()
         self.pyboy.set_emulation_speed(
-            0 if self.run_headless else config["visual_playback_speed"]
+            0 if self.run_headless else self.visual_playback_speed
         )
 
     def reset(
@@ -90,7 +97,7 @@ class TetrisGymEnv(Env):
         # TODO: Need to set up recording here to replay attempts
 
         # Grab the initial observation
-        observation = self.get_observation()
+        observation = self._get_observation()
         additional_info = {}  # TBD
         return observation, additional_info
 
@@ -100,17 +107,17 @@ class TetrisGymEnv(Env):
         """Advances the agent forward one step."""
         self.run_action(action)
 
-        observation = self.get_observation()
+        observation = self._get_observation()
 
-        terminated, reason = self.is_terminated()
+        terminated, reason = self._is_terminated()
 
-        truncated = self.is_truncated()
+        truncated = self._is_truncated()
 
         # Determine reward
-        reward = self.get_reward()
+        reward = self._get_reward(termination_reason=reason)
 
         # Obtain additional information
-        additional_info = self.get_info()
+        additional_info = self._get_info()
 
         return observation, reward, terminated, truncated, additional_info
 
@@ -120,7 +127,11 @@ class TetrisGymEnv(Env):
     def run_action(self, action):
         return None
 
-    def get_observation(self) -> np.ndarray[int]:
+    def close(self):
+        self.pyboy.send_input(WindowEvent.QUIT)
+        return None
+
+    def _get_observation(self) -> np.ndarray[int]:
         """Returns a simplified version of the game screen as a 20x18 NDArray.
 
         To generate the array, it reads in the background tilemap, filters tile
@@ -147,7 +158,7 @@ class TetrisGymEnv(Env):
                 obs_tm[sp_y, sp_x] = tl.OBS_SHAPE_TILE
         return obs_tm
 
-    def is_terminated(self) -> Tuple[bool, str | None]:
+    def _is_terminated(self) -> Tuple[bool, str | None]:
         """Determines if the episode is over by checking the screen state and
         score. The game episode is terminated if we get a gameover screen or
         the score is over 999,999 (max score that can be measured)"""
@@ -162,38 +173,47 @@ class TetrisGymEnv(Env):
             return True, "max_score"
         return False, None
 
-    def get_reward(self):
-        new_score = self.get_current_score()
+    def _get_reward(self, termination_reason: str | None = None):
+        new_score = self._get_current_score()
         score_diff = new_score - self.score
         self.score = new_score
 
-        lines_cleared = self.get_lines_cleared()
+        lines_cleared = self._get_lines_cleared()
         lines_diff = lines_cleared - self.lines_cleared
         self.lines_cleared = lines_cleared
 
+        gameover_reward = (
+            self.reward_gameover if termination_reason == "gameover" else 0
+        )
+        max_score_reward = (
+            self.reward_max_score if termination_reason == "max_score" else 0
+        )
+
         reward = (
-            score_diff * common.REWARD_MULT_SCORE
-            + lines_diff * common.REWARD_MULT_LINES
+            score_diff * self.reward_per_score
+            + lines_diff * self.reward_per_line
+            + gameover_reward
+            + max_score_reward
         )
         return reward
 
-    def is_truncated(self):
+    def _is_truncated(self):
         """Checks if the episode should be truncated by comparing the current
         count of shapes to the limit provided in the config"""
-        self.shape_count = self.get_shape_count()
+        self.shape_count = self._get_shape_count()
         if self.shape_count >= self.max_shape_limit:
             return True
         else:
             return False
 
-    def get_info(self) -> Dict:
+    def _get_info(self) -> Dict:
         """Returns information about the game that is not required for observations."""
         additional_info = {}
-        additional_info.update(self.get_shapes)
-        additional_info.update(self.get_level)
+        additional_info.update(self._get_shapes())
+        additional_info.update(self._get_level())
         return additional_info
 
-    def load_starting_states(self) -> List[io.BytesIO]:
+    def _load_starting_states(self) -> List[io.BytesIO]:
         """Loads all starting states as BytesIO that can be read by PyBoy"""
         starting_states = []
         for fp in common.POST_START_STATE_DIR.glob("*.state"):
@@ -203,7 +223,7 @@ class TetrisGymEnv(Env):
             starting_states.append(io.BytesIO(starting_state_bytes))
         return starting_states
 
-    def get_current_score(self) -> int:
+    def _get_current_score(self) -> int:
         """Returns the current score of the game.
 
         Tetris records its score as a 3 byte little endian BCD starting at
@@ -226,7 +246,7 @@ class TetrisGymEnv(Env):
         )
         return score_decimal_value
 
-    def get_shapes(self) -> Dict:
+    def _get_shapes(self) -> Dict:
         """Returns the active, preview, and next preview shapes with rotation"""
         active_shape = ml.SHAPE_LOOKUP.get(
             self.pyboy.get_memory_value(ml.ACTIVE_SHAPE_ADDR), None
@@ -244,7 +264,7 @@ class TetrisGymEnv(Env):
         }
         return shape_dict
 
-    def get_lines_cleared(self) -> Dict[str, int]:
+    def _get_lines_cleared(self) -> Dict[str, int]:
         """The number of lines cleared is also stared as a 3 byte little endian
         BCD"""
         lines_hex_values = [
@@ -263,7 +283,7 @@ class TetrisGymEnv(Env):
         )
         return lines_decimal_value
 
-    def get_shape_count(self) -> int:
+    def _get_shape_count(self) -> int:
         """Returns the current count of shapes played.
 
         Tetris exposes a flag in memory indicating when a shape is active (in
@@ -282,11 +302,11 @@ class TetrisGymEnv(Env):
         self._shape_was_active = shape_is_active
         return new_shape_count
 
-    def get_level(self) -> int:
+    def _get_level(self) -> int:
         """Returns the current Tetris level"""
         level_hex = self.pyboy.get_memory_value(ml.GAME_LEVEL_ADDR)
         level_decimal = level_hex % 16 + (level_hex // 16) * 10
-        return level_decimal
+        return {"level": level_decimal}
 
 
 if __name__ == "__main__":
