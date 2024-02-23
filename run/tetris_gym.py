@@ -1,11 +1,12 @@
 import io
 from pathlib import Path
 import random
-from typing import Any, SupportsFloat, Tuple, Dict, List
+from typing import Any, SupportsFloat, Tuple, Dict, List, Union
 
 from gymnasium import Env, spaces
 from gymnasium.core import RenderFrame
 import numpy as np
+from numpy.typing import NDArray
 from pyboy import PyBoy, WindowEvent
 from pyboy.botsupport.tilemap import TileMap
 
@@ -36,27 +37,32 @@ class TetrisGymEnv(Env):
         self.reward_gameover = config["reward_gameover"]
         self.reward_max_score = config["reward_max_score"]
         self.actions_per_second = config["actions_per_second"]
+        self.render_mode = config["render_mode"]
 
         # Constants
+        self.metadata = {
+            "render_modes": ["rgb_array"],
+            "render_fps": self.actions_per_second,
+        }
         self.max_score = 999999
         self.valid_actions = [
-            WindowEvent.PRESS_ARROW_DOWN,
+            # WindowEvent.PRESS_ARROW_DOWN,
             WindowEvent.PRESS_ARROW_LEFT,
             WindowEvent.PRESS_ARROW_RIGHT,
             WindowEvent.PRESS_BUTTON_A,
             WindowEvent.PRESS_BUTTON_B,
         ]
         self.valid_releases = [
-            WindowEvent.RELEASE_ARROW_DOWN,
+            # WindowEvent.RELEASE_ARROW_DOWN,
             WindowEvent.RELEASE_ARROW_LEFT,
             WindowEvent.RELEASE_ARROW_RIGHT,
             WindowEvent.RELEASE_BUTTON_A,
             WindowEvent.RELEASE_BUTTON_B,
         ]
-        self.hold_frames = 60 // self.actions_per_second
-        self.starting_states = self._load_starting_states()
+        self.hold_frames = cm.FPS // self.actions_per_second
+        self.starting_state_paths = self._get_starting_state_paths()
 
-        self.output_shape = (18, 20, 1)
+        self.output_shape = (18, 20)
 
         # Set these in ALL subclasses
         self.action_space = spaces.Discrete(len(self.valid_actions))
@@ -81,16 +87,23 @@ class TetrisGymEnv(Env):
         )
 
     def reset(
-        self, seed: int | None = None, options: Dict[str, Any] | None = None
-    ) -> Tuple[Any | Dict[str, Any]]:
+        self,
+        seed: Union[int, None] = None,
+        options: Union[Dict[str, Any], None] = None,
+    ) -> Tuple[Any, Dict[str, Any]]:
         # Call super and set seed
         super().reset(seed=seed)
         self.seed = seed
 
         # Use seed to select a random starting state from the directory
-        starting_state_i = self.np_random.integers(0, len(self.starting_states))
-        starting_state = self.starting_states[starting_state_i]
-        self.pyboy.load_state(starting_state)
+        starting_state_i = self.np_random.integers(
+            0, len(self.starting_state_paths)
+        )
+
+        starting_state_path = self.starting_state_paths[starting_state_i]
+        with open(starting_state_path, "rb") as B:
+            self.pyboy.load_state(B)
+            B.close()
 
         # Set default values
         self.score = 0
@@ -125,7 +138,7 @@ class TetrisGymEnv(Env):
 
         return observation, reward, terminated, truncated, additional_info
 
-    def render(self) -> RenderFrame | List[RenderFrame] | None:
+    def render(self) -> Union[RenderFrame, List[RenderFrame], None]:
         """Renders the screen as an RGB numpy array or None.
 
         While the Env class supports multiple render modes, this implementation
@@ -153,7 +166,7 @@ class TetrisGymEnv(Env):
         self.pyboy.send_input(WindowEvent.QUIT)
         return None
 
-    def _get_observation(self) -> np.ndarray[int]:
+    def _get_observation(self) -> NDArray[np.int_]:
         """Returns a simplified version of the game screen as a 20x18 NDArray.
 
         To generate the array, it reads in the background tilemap, filters tile
@@ -178,9 +191,10 @@ class TetrisGymEnv(Env):
                 sp_y = sp.y // 8
                 # All onscreen sprites are shape tiles
                 obs_tm[sp_y, sp_x] = tl.OBS_SHAPE_TILE
+        obs_tm = obs_tm.astype(np.uint8, copy=False)
         return obs_tm
 
-    def _is_terminated(self) -> Tuple[bool, str | None]:
+    def _is_terminated(self) -> Tuple[bool, Union[str, None]]:
         """Determines if the episode is over by checking the screen state and
         score. The game episode is terminated if we get a gameover screen or
         the score is over 999,999 (max score that can be measured)"""
@@ -195,7 +209,7 @@ class TetrisGymEnv(Env):
             return True, "max_score"
         return False, None
 
-    def _get_reward(self, termination_reason: str | None = None):
+    def _get_reward(self, termination_reason: Union[str, None] = None):
         new_score = self._get_current_score()
         score_diff = new_score - self.score
         self.score = new_score
@@ -235,14 +249,11 @@ class TetrisGymEnv(Env):
         additional_info.update(self._get_level())
         return additional_info
 
-    def _load_starting_states(self) -> List[io.BytesIO]:
-        """Loads all starting states as BytesIO that can be read by PyBoy"""
+    def _get_starting_state_paths(self) -> List[io.BytesIO]:
+        """Returns starting state paths that can be read by PyBoy"""
         starting_states = []
         for fp in cm.POST_START_STATE_DIR.glob("*.state"):
-            with open(fp, "rb") as B:
-                starting_state_bytes = B.read()
-                B.close()
-            starting_states.append(io.BytesIO(starting_state_bytes))
+            starting_states.append(fp)
         return starting_states
 
     def _get_current_score(self) -> int:

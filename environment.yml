@@ -11,4 +11,6 @@ dependencies:
       - torch==2.2.0
       - torchaudio==2.2.0
       - torchvision==0.17.0
+      - pygame
+      - opencv-python
 prefix: ./.conda

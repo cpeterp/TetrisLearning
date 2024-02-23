@@ -1,0 +1,12 @@
+{
+    "render_mode": "rgb_array",
+    "visual_playback_speed": 1,
+    "max_shape_limit": 1000,
+    "run_headless": true,
+    "reward_per_score": 0.1,
+    "reward_per_line": 10,
+    "reward_gameover": 0,
+    "reward_max_score": 10,
+    "actions_per_second": 12,
+    "cpu_episode_count_mod": -1
+}
