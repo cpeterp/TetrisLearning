@@ -9,7 +9,7 @@ import numpy as np
 from pyboy import PyBoy, WindowEvent
 from pyboy.botsupport.tilemap import TileMap
 
-import common
+import common as cm
 import tile_lookup as tl
 import memory_lookup as ml
 
@@ -35,6 +35,7 @@ class TetrisGymEnv(Env):
         self.reward_per_line = config["reward_per_line"]
         self.reward_gameover = config["reward_gameover"]
         self.reward_max_score = config["reward_max_score"]
+        self.actions_per_second = config["actions_per_second"]
 
         # Constants
         self.max_score = 999999
@@ -52,7 +53,7 @@ class TetrisGymEnv(Env):
             WindowEvent.RELEASE_BUTTON_A,
             WindowEvent.RELEASE_BUTTON_B,
         ]
-
+        self.hold_frames = 60 // self.actions_per_second
         self.starting_states = self._load_starting_states()
 
         self.output_shape = (18, 20, 1)
@@ -66,12 +67,15 @@ class TetrisGymEnv(Env):
         window_type = "headless" if self.run_headless else "SDL2"
 
         self.pyboy = PyBoy(
-            str(common.TETRIS_ROM_PATH),
+            str(cm.TETRIS_ROM_PATH),
             window_type=window_type,
             debugging=False,
             disable_input=True,
         )
         self.botsupport_manager = self.pyboy.botsupport_manager()
+        # TODO: Only define this if we need to
+        self.screen = self.botsupport_manager.screen()
+
         self.pyboy.set_emulation_speed(
             0 if self.run_headless else self.visual_playback_speed
         )
@@ -122,9 +126,27 @@ class TetrisGymEnv(Env):
         return observation, reward, terminated, truncated, additional_info
 
     def render(self) -> RenderFrame | List[RenderFrame] | None:
-        return super().render()
+        """Renders the screen as an RGB numpy array or None.
 
-    def run_action(self, action):
+        While the Env class supports multiple render modes, this implementation
+        only supports none or rgb_array"""
+        if self.render_mode == "rgb_array":
+            game_pixels_render = self.screen.screen_ndarray()  # (144, 160, 3)
+            return game_pixels_render
+        elif self.render_mode is None:
+            return None
+        else:
+            raise ValueError(
+                f"Can not use render_mode '{self.render_mode}': it is not "
+                "supported. Use None or 'rgb_array'"
+            )
+
+    def run_action(self, action: int):
+        self.pyboy.send_input(self.valid_actions[action])
+        for _ in range(0, self.hold_frames):
+            self.pyboy.tick()
+        self.pyboy.send_input(self.valid_releases[action])
+        self.pyboy.tick()
         return None
 
     def close(self):
@@ -216,7 +238,7 @@ class TetrisGymEnv(Env):
     def _load_starting_states(self) -> List[io.BytesIO]:
         """Loads all starting states as BytesIO that can be read by PyBoy"""
         starting_states = []
-        for fp in common.POST_START_STATE_DIR.glob("*.state"):
+        for fp in cm.POST_START_STATE_DIR.glob("*.state"):
             with open(fp, "rb") as B:
                 starting_state_bytes = B.read()
                 B.close()
