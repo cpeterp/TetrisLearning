@@ -64,8 +64,8 @@ if __name__ == "__main__":
     env_checker.check_env(env)
     # learn_steps = 40
 
-    model = A2C("MlpPolicy", env, verbose=1, n_steps=15)
-    model.learn(total_timesteps=1000)
+    model = A2C("MlpPolicy", env, verbose=1, n_steps=50, gamma=0.99999)
+    model.learn(total_timesteps=5000)
 
     vec_env = model.get_env()
 
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     for i in range(1000):
         action, _state = model.predict(obs, deterministic=True)
         obs, reward, done, info = vec_env.step(action)
-        print(action)
+        print(obs)
         vec_env.render("human")
 
     # for i in range(learn_steps):

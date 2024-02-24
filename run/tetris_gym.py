@@ -51,6 +51,7 @@ class TetrisGymEnv(Env):
             WindowEvent.PRESS_ARROW_RIGHT,
             WindowEvent.PRESS_BUTTON_A,
             WindowEvent.PRESS_BUTTON_B,
+            None,
         ]
         self.valid_releases = [
             # WindowEvent.RELEASE_ARROW_DOWN,
@@ -58,16 +59,25 @@ class TetrisGymEnv(Env):
             WindowEvent.RELEASE_ARROW_RIGHT,
             WindowEvent.RELEASE_BUTTON_A,
             WindowEvent.RELEASE_BUTTON_B,
+            None,
         ]
         self.hold_frames = cm.FPS // self.actions_per_second
         self.starting_state_paths = self._get_starting_state_paths()
 
-        self.output_shape = (18, 20)
+        # Subset the tile map for observation
+        self.tm_x_start = 2
+        self.tm_x_end = 12
+        self.tm_y_start = 0
+        self.tm_y_end = 18
+        self.output_shape = (
+            self.tm_y_end - self.tm_y_start,
+            self.tm_x_end - self.tm_x_start,
+        )
 
         # Set these in ALL subclasses
         self.action_space = spaces.Discrete(len(self.valid_actions))
         self.observation_space = spaces.Box(
-            low=0, high=2, shape=self.output_shape, dtype=np.uint8
+            low=0, high=255, shape=self.output_shape, dtype=np.uint8
         )
 
         window_type = "headless" if self.run_headless else "SDL2"
@@ -122,7 +132,7 @@ class TetrisGymEnv(Env):
         self, action: Any
     ) -> Tuple[Any, SupportsFloat, bool, bool, Dict[str, Any]]:
         """Advances the agent forward one step."""
-        self.run_action(action)
+        self._run_action(action)
 
         observation = self._get_observation()
 
@@ -154,11 +164,17 @@ class TetrisGymEnv(Env):
                 "supported. Use None or 'rgb_array'"
             )
 
-    def run_action(self, action: int):
-        self.pyboy.send_input(self.valid_actions[action])
+    def _run_action(self, action: int):
+        """Runs the specified action from the list of acceptable actions."""
+        button_press = self.valid_actions[action]
+        # One of the valid actions is None, only send non-None event
+        if button_press:
+            self.pyboy.send_input(button_press)
         for _ in range(0, self.hold_frames):
             self.pyboy.tick()
-        self.pyboy.send_input(self.valid_releases[action])
+        button_release = self.valid_releases[action]
+        if button_release:
+            self.pyboy.send_input(button_release)
         self.pyboy.tick()
         return None
 
@@ -173,24 +189,34 @@ class TetrisGymEnv(Env):
         IDs to reduce dimensionality, and overlays the sprite tiles. This
         results in the simplest view of the game screen without losing
         information loss."""
-        bg_tm = self.botsupport_manager.tilemap_background()[0:20, 0:18]
+        # TODO: Consider adding a memory
+        # TODO: Consider adding a timer for how many actions until drop, or any timer
+        tile_size_px = 8
+        # Subset tilemap to play area
+        bg_tm = self.botsupport_manager.tilemap_background()[
+            self.tm_x_start : self.tm_x_end, self.tm_y_start : self.tm_y_end
+        ]
         bg_tm = np.array(bg_tm)
 
+        # Filter tiles to blank, filled, or wall
         conditions = [
             (bg_tm == tl.TILEMAP_BLANK_TILE),
-            (bg_tm >= tl.TILEMAP_SHAPE_TILES[0])
-            & (bg_tm <= tl.TILEMAP_SHAPE_TILES[-1]),
+            (
+                (bg_tm >= tl.TILEMAP_SHAPE_TILES[0])
+                & (bg_tm <= tl.TILEMAP_SHAPE_TILES[-1])
+            ),
         ]
         values = [tl.OBS_BLANK_TILE, tl.OBS_SHAPE_TILE]
         obs_tm = np.select(conditions, values, default=tl.OBS_WALL_TILE)
 
+        # Replace background tile values with sprite tile values
         for i in range(0, 40):
             sp = self.botsupport_manager.sprite(i)
             if sp.on_screen:
-                sp_x = sp.x // 8
-                sp_y = sp.y // 8
+                sp_x = sp.x // tile_size_px - self.tm_x_start
+                sp_y = sp.y // tile_size_px - self.tm_y_start
                 # All onscreen sprites are shape tiles
-                obs_tm[sp_y, sp_x] = tl.OBS_SHAPE_TILE
+                obs_tm[sp_x, sp_y] = tl.OBS_SHAPE_TILE
         obs_tm = obs_tm.astype(np.uint8, copy=False)
         return obs_tm
 
