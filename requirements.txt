@@ -1,0 +1,10 @@
+-i https://download.pytorch.org/whl/cpu
+torch==2.2.0+cpu
+torchaudio==2.2.0+cpu
+torchvision==0.17.0+cpu
+-i https://pypi.org/simple
+pyboy==1.6.14
+gmynasium
+stable-baselines3==2.2.1
+opencv-python
+pygame
