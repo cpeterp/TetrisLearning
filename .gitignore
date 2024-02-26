@@ -9,8 +9,9 @@
 *.gb
 *.ram
 
-# Starting states
+# Run data
 data/variable_starting_states
+data/sessions
 
 # Temp files
 ~*

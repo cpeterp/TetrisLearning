@@ -24,9 +24,10 @@ class TetrisGymEnv(Env):
         self.score = 0
         self.lines_cleared = 0
         self.shape_count = 0
-        self._shape_was_active = True
-        self._is_gameover = False
-        self._is_max_score = False
+        self.filled_tiles = 0
+        self.shape_was_active = True
+        self.is_gameover = False
+        self.is_max_score = False
 
         # Pulled from config
         self.visual_playback_speed = config["visual_playback_speed"]
@@ -34,17 +35,19 @@ class TetrisGymEnv(Env):
         self.run_headless = config["run_headless"]
         self.reward_per_score = config["reward_per_score"]
         self.reward_per_line = config["reward_per_line"]
+        self.reward_per_filled_tiles = config["reward_per_filled_tiles"]
         self.reward_gameover = config["reward_gameover"]
         self.reward_max_score = config["reward_max_score"]
         self.actions_per_second = config["actions_per_second"]
         self.render_mode = config["render_mode"]
+        self.observation_mode = config["observation_mode"]
 
         # Constants
         self.metadata = {
             "render_modes": ["rgb_array"],
             "render_fps": self.actions_per_second,
         }
-        self.max_score = 999999
+        self.max_score = 999999  # Memory won't hold a higher score
         self.valid_actions = [
             # WindowEvent.PRESS_ARROW_DOWN,
             WindowEvent.PRESS_ARROW_LEFT,
@@ -77,7 +80,10 @@ class TetrisGymEnv(Env):
         # Set these in ALL subclasses
         self.action_space = spaces.Discrete(len(self.valid_actions))
         self.observation_space = spaces.Box(
-            low=0, high=255, shape=self.output_shape, dtype=np.uint8
+            low=tl.OBS_SPACE_RANGE[0],
+            high=tl.OBS_SPACE_RANGE[1],
+            shape=self.output_shape,
+            dtype=np.uint8,
         )
 
         window_type = "headless" if self.run_headless else "SDL2"
@@ -119,12 +125,15 @@ class TetrisGymEnv(Env):
         self.score = 0
         self.lines_cleared = 0
         self.shape_count = 0
-        self._shape_was_active = True
+        self.filled_tiles = 0
+        self.shape_was_active = True
+        self.is_gameover = False
+        self.is_max_score = False
 
         # TODO: Need to set up recording here to replay attempts
 
         # Grab the initial observation
-        observation = self._get_observation()
+        observation = self._get_observation(self.observation_mode)
         additional_info = {}  # TBD
         return observation, additional_info
 
@@ -134,14 +143,16 @@ class TetrisGymEnv(Env):
         """Advances the agent forward one step."""
         self._run_action(action)
 
-        observation = self._get_observation()
+        observation = self._get_observation(self.observation_mode)
 
         terminated, reason = self._is_terminated()
 
         truncated = self._is_truncated()
 
         # Determine reward
-        reward = self._get_reward(termination_reason=reason)
+        reward = self._get_reward(
+            termination_reason=reason, observation=observation
+        )
 
         # Obtain additional information
         additional_info = self._get_info()
@@ -182,7 +193,7 @@ class TetrisGymEnv(Env):
         self.pyboy.send_input(WindowEvent.QUIT)
         return None
 
-    def _get_observation(self) -> NDArray[np.int_]:
+    def _get_observation(self, obs_mode: str = "tilemap") -> NDArray[np.int_]:
         """Returns a simplified version of the game screen as a 20x18 NDArray.
 
         To generate the array, it reads in the background tilemap, filters tile
@@ -191,33 +202,34 @@ class TetrisGymEnv(Env):
         information loss."""
         # TODO: Consider adding a memory
         # TODO: Consider adding a timer for how many actions until drop, or any timer
-        tile_size_px = 8
-        # Subset tilemap to play area
-        bg_tm = self.botsupport_manager.tilemap_background()[
-            self.tm_x_start : self.tm_x_end, self.tm_y_start : self.tm_y_end
-        ]
-        bg_tm = np.array(bg_tm)
 
-        # Filter tiles to blank, filled, or wall
-        conditions = [
-            (bg_tm == tl.TILEMAP_BLANK_TILE),
-            (
-                (bg_tm >= tl.TILEMAP_SHAPE_TILES[0])
-                & (bg_tm <= tl.TILEMAP_SHAPE_TILES[-1])
-            ),
-        ]
-        values = [tl.OBS_BLANK_TILE, tl.OBS_SHAPE_TILE]
-        obs_tm = np.select(conditions, values, default=tl.OBS_WALL_TILE)
+        if obs_mode == "tilemap":
+            tile_size_px = 8
+            # Subset tilemap to play area
+            bg_tm = self.botsupport_manager.tilemap_background()[:, :]
+            bg_tm = np.array(bg_tm)
 
-        # Replace background tile values with sprite tile values
-        for i in range(0, 40):
-            sp = self.botsupport_manager.sprite(i)
-            if sp.on_screen:
-                sp_x = sp.x // tile_size_px - self.tm_x_start
-                sp_y = sp.y // tile_size_px - self.tm_y_start
-                # All onscreen sprites are shape tiles
-                obs_tm[sp_x, sp_y] = tl.OBS_SHAPE_TILE
-        obs_tm = obs_tm.astype(np.uint8, copy=False)
+            # Filter tiles to blank, filled, or wall
+            conditions = [
+                (bg_tm == tl.TILEMAP_BLANK_TILE),
+                (
+                    (bg_tm >= tl.TILEMAP_SHAPE_TILES[0])
+                    & (bg_tm <= tl.TILEMAP_SHAPE_TILES[-1])
+                ),
+            ]
+            values = [tl.OBS_BLANK_TILE, tl.OBS_SHAPE_TILE]
+            obs_tm = np.select(conditions, values, default=tl.OBS_WALL_TILE)
+            # Replace background tile values with sprite tile values
+            for i in range(0, 40):
+                sp = self.botsupport_manager.sprite(i)
+                if sp.on_screen:
+                    sp_x = sp.x // tile_size_px
+                    sp_y = sp.y // tile_size_px
+                    obs_tm[sp_y, sp_x] = tl.OBS_SPRITE_TILE
+            obs_tm = obs_tm.astype(np.uint8, copy=False)
+            obs_tm = obs_tm[
+                self.tm_y_start : self.tm_y_end, self.tm_x_start : self.tm_x_end
+            ]
         return obs_tm
 
     def _is_terminated(self) -> Tuple[bool, Union[str, None]]:
@@ -235,15 +247,33 @@ class TetrisGymEnv(Env):
             return True, "max_score"
         return False, None
 
-    def _get_reward(self, termination_reason: Union[str, None] = None):
+    def _get_reward(
+        self,
+        termination_reason: Union[str, None] = None,
+        observation: Union[NDArray[np.uint8], None] = None,
+    ):
+        # Calculate score from score
         new_score = self._get_current_score()
         score_diff = new_score - self.score
         self.score = new_score
 
+        # Calculate score form cleared line
         lines_cleared = self._get_lines_cleared()
         lines_diff = lines_cleared - self.lines_cleared
         self.lines_cleared = lines_cleared
 
+        # Calculate score from observation
+        # New tiles in the last line receive score
+        last_line = observation[-1, :]
+        filled_tiles = (last_line == tl.OBS_SHAPE_TILE).sum()
+        # Only grant positive reward for filled tiles
+        if filled_tiles > self.filled_tiles:
+            filled_lines_diff = filled_tiles - self.filled_tiles
+        else:
+            filled_lines_diff = 0
+        self.filled_tiles = filled_tiles
+
+        # Calculate score from endstates
         gameover_reward = (
             self.reward_gameover if termination_reason == "gameover" else 0
         )
@@ -251,9 +281,11 @@ class TetrisGymEnv(Env):
             self.reward_max_score if termination_reason == "max_score" else 0
         )
 
+        # Total reward per round
         reward = (
             score_diff * self.reward_per_score
             + lines_diff * self.reward_per_line
+            + filled_lines_diff * self.reward_per_filled_tiles
             + gameover_reward
             + max_score_reward
         )
@@ -273,6 +305,17 @@ class TetrisGymEnv(Env):
         additional_info = {}
         additional_info.update(self._get_shapes())
         additional_info.update(self._get_level())
+        self_stats = {
+            "score": self.score,
+            "lines_cleared": self.lines_cleared,
+            "shape_count": self.shape_count,
+            "filled_tiles": self.filled_tiles,
+            "shape_was_active": self.shape_was_active,
+            "is_gameover": self.is_gameover,
+            "is_max_score": self.is_max_score,
+        }
+        additional_info.update(self_stats)
+
         return additional_info
 
     def _get_starting_state_paths(self) -> List[io.BytesIO]:
@@ -323,7 +366,7 @@ class TetrisGymEnv(Env):
         }
         return shape_dict
 
-    def _get_lines_cleared(self) -> Dict[str, int]:
+    def _get_lines_cleared(self) -> int:
         """The number of lines cleared is also stared as a 3 byte little endian
         BCD"""
         lines_hex_values = [
@@ -352,13 +395,13 @@ class TetrisGymEnv(Env):
         shape_status = self.pyboy.get_memory_value(ml.ACTIVE_SHAPE_FLAG_ADDR)
         shape_is_active = shape_status == ml.ACTIVE_SHAPE_FLAG
 
-        if shape_is_active and not self._shape_was_active:
+        if shape_is_active and not self.shape_was_active:
             # i.e. status switched form inactive to active - indicating a new
             # shape coming
             new_shape_count = self.shape_count + 1
         else:
             new_shape_count = self.shape_count
-        self._shape_was_active = shape_is_active
+        self.shape_was_active = shape_is_active
         return new_shape_count
 
     def _get_level(self) -> int:
@@ -368,6 +411,21 @@ class TetrisGymEnv(Env):
         return {"level": level_decimal}
 
 
-if __name__ == "__main__":
-    config = {"run_headless": True, "visual_playback_speed": 5}
-    tge = TetrisGymEnv(config)
+def make_env(rank, env_conf, seed=0):
+    """
+    Utility function for multiprocessed env.
+
+    Params:
+        rank: (int) index of the subprocess
+        env_id: (str) the environment ID
+        num_env: (int) the number of environments you wish to have in subprocesses
+        seed: (int) the initial seed for RNG
+    """
+
+    def _init():
+        env = TetrisGymEnv(env_conf)
+        # Ensure a different see per Env
+        env.reset(seed=(seed + rank))
+        return env
+
+    return _init
