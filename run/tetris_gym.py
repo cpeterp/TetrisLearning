@@ -37,17 +37,36 @@ class TetrisGymEnv(Env):
         self.reward_per_line = config["reward_per_line"]
         self.reward_per_filled_tiles = config["reward_per_filled_tiles"]
         self.reward_gameover = config["reward_gameover"]
-        self.reward_max_score = config["reward_max_score"]
+        self.reward_positive_endgame = config["reward_positive_endgame"]
         self.actions_per_second = config["actions_per_second"]
         self.render_mode = config["render_mode"]
         self.observation_mode = config["observation_mode"]
+        self.end_level = config["end_level"]
+        self.end_score = config["end_score"]
+        # Which limit to use for a positive end: "level" or "score"
+        self.positive_endgame = config["positive_endgame"]
 
-        # Constants
+        # Calculate max reward
+        training_level = 0  # Level currently being trained
+        max_score = (
+            self.reward_per_score * 1200 * 2.5 * (training_level + 1)
+            + self.reward_per_line * 10 * (training_level + 1)
+            + self.reward_per_filled_tiles * 10 * 10 * (training_level + 1)
+            + self.reward_positive_endgame
+        )
+
+        # Super attributes
+        self.reward_range = (self.reward_gameover, max_score)
         self.metadata = {
             "render_modes": ["rgb_array"],
             "render_fps": self.actions_per_second,
         }
+
+        # Game constants
         self.max_score = 999999  # Memory won't hold a higher score
+        self.max_tm_size = 32
+
+        # Set up spaces
         self.valid_actions = [
             # WindowEvent.PRESS_ARROW_DOWN,
             WindowEvent.PRESS_ARROW_LEFT,
@@ -64,27 +83,33 @@ class TetrisGymEnv(Env):
             WindowEvent.RELEASE_BUTTON_B,
             None,
         ]
-        self.hold_frames = cm.FPS // self.actions_per_second
-        self.starting_state_paths = self._get_starting_state_paths()
+        self.action_space = spaces.Discrete(len(self.valid_actions))
 
         # Subset the tile map for observation
         self.tm_x_start = 2
         self.tm_x_end = 12
         self.tm_y_start = 0
         self.tm_y_end = 18
-        self.output_shape = (
+
+        # Setup the observation space
+        output_shape = (
             self.tm_y_end - self.tm_y_start,
             self.tm_x_end - self.tm_x_start,
         )
-
-        # Set these in ALL subclasses
-        self.action_space = spaces.Discrete(len(self.valid_actions))
+        # output_shape = (
+        #     self.max_tm_size,
+        #     self.max_tm_size,
+        #     1,
+        # )
         self.observation_space = spaces.Box(
             low=tl.OBS_SPACE_RANGE[0],
             high=tl.OBS_SPACE_RANGE[1],
-            shape=self.output_shape,
+            shape=output_shape,
             dtype=np.uint8,
         )
+
+        self.hold_frames = cm.FPS // self.actions_per_second
+        self.starting_state_paths = self._get_starting_state_paths()
 
         window_type = "headless" if self.run_headless else "SDL2"
 
@@ -203,39 +228,45 @@ class TetrisGymEnv(Env):
         # TODO: Consider adding a memory
         # TODO: Consider adding a timer for how many actions until drop, or any timer
 
-        if obs_mode == "tilemap":
-            tile_size_px = 8
-            # Subset tilemap to play area
-            bg_tm = self.botsupport_manager.tilemap_background()[:, :]
-            bg_tm = np.array(bg_tm)
+        tile_size_px = 8
+        # Subset tilemap to play area
+        bg_tm = self.botsupport_manager.tilemap_background()[:, :]
+        bg_tm = np.array(bg_tm)
 
-            # Filter tiles to blank, filled, or wall
-            conditions = [
-                (bg_tm == tl.TILEMAP_BLANK_TILE),
-                (
-                    (bg_tm >= tl.TILEMAP_SHAPE_TILES[0])
-                    & (bg_tm <= tl.TILEMAP_SHAPE_TILES[-1])
-                ),
-            ]
-            values = [tl.OBS_BLANK_TILE, tl.OBS_SHAPE_TILE]
-            obs_tm = np.select(conditions, values, default=tl.OBS_WALL_TILE)
-            # Replace background tile values with sprite tile values
-            for i in range(0, 40):
-                sp = self.botsupport_manager.sprite(i)
-                if sp.on_screen:
-                    sp_x = sp.x // tile_size_px
-                    sp_y = sp.y // tile_size_px
-                    obs_tm[sp_y, sp_x] = tl.OBS_SPRITE_TILE
-            obs_tm = obs_tm.astype(np.uint8, copy=False)
-            obs_tm = obs_tm[
-                self.tm_y_start : self.tm_y_end, self.tm_x_start : self.tm_x_end
-            ]
-        return obs_tm
+        # Filter tiles to blank, filled, or wall
+        conditions = [
+            (bg_tm == tl.TILEMAP_BLANK_TILE),
+            (
+                (bg_tm >= tl.TILEMAP_SHAPE_TILES[0])
+                & (bg_tm <= tl.TILEMAP_SHAPE_TILES[-1])
+            ),
+        ]
+        values = [tl.OBS_BLANK_TILE, tl.OBS_SHAPE_TILE]
+        tilemap = np.select(conditions, values, default=tl.OBS_WALL_TILE)
+        # Replace background tile values with sprite tile values
+        for i in range(0, 40):
+            sp = self.botsupport_manager.sprite(i)
+            if sp.on_screen:
+                sp_x = sp.x // tile_size_px
+                sp_y = sp.y // tile_size_px
+                tilemap[sp_y, sp_x] = tl.OBS_SPRITE_TILE
+        tilemap = tilemap.astype(np.uint8, copy=False)
+        tilemap = tilemap[
+            self.tm_y_start : self.tm_y_end, self.tm_x_start : self.tm_x_end
+        ]
+        # Subset observation to play area
+        # tilemap = tilemap[
+        #     self.tm_y_start : self.tm_y_end,
+        #     self.tm_x_start : self.tm_x_end,
+        # ]
+        # newaxis makes this a 3D array for CnnPolicy
+        # tilemap = tilemap[:, :, np.newaxis]
+        return tilemap
 
     def _is_terminated(self) -> Tuple[bool, Union[str, None]]:
-        """Determines if the episode is over by checking the screen state and
-        score. The game episode is terminated if we get a gameover screen or
-        the score is over 999,999 (max score that can be measured)"""
+        """Determines if the episode is over by checking the screen state,
+        score, and level. The game episode is terminated if we get a gameover
+        screen, score limit, or level limit"""
         screen_state = self.pyboy.get_memory_value(ml.SCREEN_STATE_ADDR)
         if (
             screen_state == ml.GAMEOVER_SCREEN_STATE
@@ -243,8 +274,12 @@ class TetrisGymEnv(Env):
         ):
             # Game over screen
             return True, "gameover"
-        if self.score >= self.max_score:
-            return True, "max_score"
+        if self.positive_endgame == "score":
+            if self._get_current_score() >= self.end_score:
+                return True, "end_score"
+        if self.positive_endgame == "level":
+            if self._get_level() >= self.end_level:
+                return True, "end_level"
         return False, None
 
     def _get_reward(
@@ -265,7 +300,9 @@ class TetrisGymEnv(Env):
         # Calculate score from observation
         # New tiles in the last line receive score
         last_line = observation[-1, :]
-        filled_tiles = (last_line == tl.OBS_SHAPE_TILE).sum()
+        filled_tiles = (
+            (last_line == tl.OBS_SHAPE_TILE) | (last_line == tl.OBS_SHAPE_TILE)
+        ).sum()
         # Only grant positive reward for filled tiles
         if filled_tiles > self.filled_tiles:
             filled_lines_diff = filled_tiles - self.filled_tiles
@@ -278,7 +315,9 @@ class TetrisGymEnv(Env):
             self.reward_gameover if termination_reason == "gameover" else 0
         )
         max_score_reward = (
-            self.reward_max_score if termination_reason == "max_score" else 0
+            self.reward_positive_endgame
+            if termination_reason == "max_score"
+            else 0
         )
 
         # Total reward per round
@@ -292,10 +331,12 @@ class TetrisGymEnv(Env):
         return reward
 
     def _is_truncated(self):
-        """Checks if the episode should be truncated by comparing the current
-        count of shapes to the limit provided in the config"""
+        """Checks if the episode should be truncated due to a neutral limit,
+        i.e. shape count or max sore."""
         self.shape_count = self._get_shape_count()
         if self.shape_count >= self.max_shape_limit:
+            return True
+        elif self.score >= self.max_score:
             return True
         else:
             return False
@@ -304,8 +345,8 @@ class TetrisGymEnv(Env):
         """Returns information about the game that is not required for observations."""
         additional_info = {}
         additional_info.update(self._get_shapes())
-        additional_info.update(self._get_level())
         self_stats = {
+            "level": self._get_level(),
             "score": self.score,
             "lines_cleared": self.lines_cleared,
             "shape_count": self.shape_count,
@@ -408,7 +449,7 @@ class TetrisGymEnv(Env):
         """Returns the current Tetris level"""
         level_hex = self.pyboy.get_memory_value(ml.GAME_LEVEL_ADDR)
         level_decimal = level_hex % 16 + (level_hex // 16) * 10
-        return {"level": level_decimal}
+        return level_decimal
 
 
 def make_env(rank, env_conf, seed=0):

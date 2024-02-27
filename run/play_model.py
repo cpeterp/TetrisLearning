@@ -31,4 +31,4 @@ if __name__ == "__main__":
         obs, reward, done, info = env.step(action)
         time.sleep(0.05)
         print(obs)
-        print(reward)
+        print(info)
