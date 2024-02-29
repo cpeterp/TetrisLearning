@@ -12,6 +12,6 @@
     "reward_per_filled_tiles": 0.5,
     "reward_gameover": 0,
     "reward_positive_endgame": 10,
-    "actions_per_second": 4,
+    "actions_per_second": 2,
     "cpu_episode_count_mod": -1
 }

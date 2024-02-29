@@ -33,10 +33,10 @@ if __name__ == "__main__":
         "MlpPolicy",
         env,
         verbose=1,
-        n_steps=10,
-        gamma=0.99,
+        n_steps=20,
+        gamma=0.9999,
         policy_kwargs={"features_extractor_class": TilemapCNN},
     )
-    model.learn(total_timesteps=100000, progress_bar=True)
+    model.learn(total_timesteps=50000, progress_bar=True)
     print("Done Learning")
     model.save(cm.TRAINING_SESSION_DIR / session_id)
