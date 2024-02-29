@@ -30,5 +30,6 @@ if __name__ == "__main__":
         action, _state = model.predict(obs, deterministic=True)
         obs, reward, done, info = env.step(action)
         time.sleep(0.05)
-        print(obs)
-        print(info)
+        print(obs[0, :, :, 0])
+        # print(info)
+        print(reward)

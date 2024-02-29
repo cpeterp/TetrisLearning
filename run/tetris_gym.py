@@ -95,6 +95,7 @@ class TetrisGymEnv(Env):
         output_shape = (
             self.tm_y_end - self.tm_y_start,
             self.tm_x_end - self.tm_x_start,
+            1,
         )
         # output_shape = (
         #     self.max_tm_size,
@@ -251,16 +252,13 @@ class TetrisGymEnv(Env):
                 sp_y = sp.y // tile_size_px
                 tilemap[sp_y, sp_x] = tl.OBS_SPRITE_TILE
         tilemap = tilemap.astype(np.uint8, copy=False)
-        tilemap = tilemap[
-            self.tm_y_start : self.tm_y_end, self.tm_x_start : self.tm_x_end
-        ]
         # Subset observation to play area
-        # tilemap = tilemap[
-        #     self.tm_y_start : self.tm_y_end,
-        #     self.tm_x_start : self.tm_x_end,
-        # ]
-        # newaxis makes this a 3D array for CnnPolicy
-        # tilemap = tilemap[:, :, np.newaxis]
+        # newaxis makes this a 3D array (expected for images)
+        tilemap = tilemap[
+            self.tm_y_start : self.tm_y_end,
+            self.tm_x_start : self.tm_x_end,
+            np.newaxis,
+        ]
         return tilemap
 
     def _is_terminated(self) -> Tuple[bool, Union[str, None]]:

@@ -1,5 +1,8 @@
 from pathlib import Path
 
+# System settings
+LOCAL_TZ = "US/Eastern"  # Change to your local tz, used for file naming
+
 # Paths
 TETRIS_ROM_PATH = Path.cwd() / "data/tetris.gb"
 POST_START_STATE_DIR = Path.cwd() / "data/variable_starting_states"
