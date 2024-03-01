@@ -3,9 +3,11 @@ observations, etc. Input actions are passed via commandline input."""
 
 import json
 
+from stable_baselines3.common import env_checker
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 import common as cm
+import memory_lookup as ml
 from tetris_gym import TetrisGymEnv, make_env
 
 inpt_lu = {
@@ -22,6 +24,7 @@ if __name__ == "__main__":
         env_config = json.load(F)
         F.close()
 
+    env_checker.check_env(TetrisGymEnv(env_config))
     env = DummyVecEnv([make_env(0, env_config)])
     obs = env.reset()
     for i in range(1000):
@@ -33,8 +36,11 @@ if __name__ == "__main__":
             if action is not None:
                 break
         obs, reward, done, info = env.step([int(action)])
-        print(obs[0, :, :, 0])
-        print(info)
+        print(obs["tilemap"][0, :, :])
+        # print(info)
+        print("drop_flag", obs["drop_flag"][0, 0])
+        print("height", obs["height"][0, 0])
+        print("next_shape", ml.SHAPE_LOOKUP.get(obs["next_shape"][0], None))
         print("reward", reward[0])
         print("done", done[0])
         print("step", i)

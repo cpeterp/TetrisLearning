@@ -108,7 +108,7 @@ class TetrisGymEnv(Env):
         tm_output_shape = (
             self.tm_y_end - (self.tm_y_start + self.truncate_amount),
             self.tm_x_end - self.tm_x_start,
-            1,
+            # 1,
         )
         tm_observation_space = spaces.Box(
             low=tl.OBS_SPACE_RANGE[0],
@@ -127,7 +127,7 @@ class TetrisGymEnv(Env):
             shape=ra_output_shape,
             dtype=np.uint8,
         )
-        print(f"Using observation_mode {self.observation_mode}")
+        # print(f"Using observation_mode {self.observation_mode}")
         if self.observation_mode == "tilemap":
             self.observation_space = tm_observation_space
         elif self.observation_mode == "rgb_array":
@@ -137,7 +137,8 @@ class TetrisGymEnv(Env):
                 {
                     "tilemap": tm_observation_space,
                     "height": spaces.Box(0, 17, dtype=int),
-                    "drop_flag": spaces.Box(0, 1, int),
+                    "drop_flag": spaces.Box(0, 1, dtype=int),
+                    "next_shape": spaces.Discrete(8),  # 7 shapes plus none
                 }
             )
         else:
@@ -279,12 +280,7 @@ class TetrisGymEnv(Env):
             self.current_rgb_array = self._get_rgb_array_obs()
             return self.current_rgb_array
         elif self.observation_mode == "multi":
-            obs_dict = {
-                "tilemap": self.current_tilemap,
-                "height": np.array([self._get_pile_height()], dtype=int),
-                "drop_flag": np.array([self._shape_will_drop()], dtype=int),
-            }
-            return obs_dict
+            return self._get_multi_obs()
         else:
             raise ValueError(
                 f"Observation mode {self.observation_mode} is not valid. Could not generate an observation"
@@ -322,9 +318,25 @@ class TetrisGymEnv(Env):
         tilemap = tilemap[
             self.tm_y_start + self.truncate_amount : self.tm_y_end,
             self.tm_x_start : self.tm_x_end,
-            np.newaxis,
+            # np.newaxis,
         ]
         return tilemap
+
+    def _get_multi_obs(self) -> dict:
+        # Get the preview shape index (range from 0-6)
+        # 7 corresponds to None
+        shape_info = self._get_shapes()
+        next_shape = shape_info.get("preview_shape_i", 7)
+        # These use box spaces - must be put into a 1d numpy array
+        height = np.array([self._get_pile_height()], dtype=int)
+        drop_flag = np.array([self._shape_will_drop()], dtype=int)
+        obs_dict = {
+            "tilemap": self.current_tilemap,
+            "height": height,
+            "drop_flag": drop_flag,
+            "next_shape": next_shape,
+        }
+        return obs_dict
 
     def _is_terminated(self) -> Tuple[bool, Union[str, None]]:
         """Determines if the episode is over by checking the screen state,
@@ -454,19 +466,24 @@ class TetrisGymEnv(Env):
 
     def _get_shapes(self) -> Dict:
         """Returns the active, preview, and next preview shapes with rotation"""
-        active_shape = ml.SHAPE_LOOKUP.get(
-            self.pyboy.get_memory_value(ml.ACTIVE_SHAPE_ADDR), None
-        )
-        preview_shape = ml.SHAPE_LOOKUP.get(
-            self.pyboy.get_memory_value(ml.PREVIEW_SHAPE_ADDR), None
-        )
-        next_preview_shape = ml.SHAPE_LOOKUP.get(
-            self.pyboy.get_memory_value(ml.NEXT_PREVIEW_SHAPE_ADDR), None
-        )
+        # Retreive values from memory
+        as_val = self.pyboy.get_memory_value(ml.ACTIVE_SHAPE_ADDR)
+        ps_val = self.pyboy.get_memory_value(ml.PREVIEW_SHAPE_ADDR)
+        nps_val = self.pyboy.get_memory_value(ml.NEXT_PREVIEW_SHAPE_ADDR)
+        # Convert values to indicies
+        as_i = as_val // 4
+        as_rot = as_val % 4
+        ps_i = ps_val // 4
+        nps_i = nps_val // 4
+        # Make dict for output
         shape_dict = {
-            "active_shape": active_shape,
-            "preview_shape": preview_shape,
-            "next_preview_shape": next_preview_shape,
+            "active_shape": ml.SHAPE_LOOKUP.get(as_i, None),
+            "active_shape_i": as_i,
+            "active_shape_rotation": as_rot,
+            "preview_shape": ml.SHAPE_LOOKUP.get(ps_i, None),
+            "preview_shape_i": ps_i,
+            "next_preview_shape": ml.SHAPE_LOOKUP.get(nps_i, None),
+            "next_preview_shape_i": nps_i,
         }
         return shape_dict
 

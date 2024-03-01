@@ -1,6 +1,6 @@
 {
     "render_mode": "rgb_array",
-    "observation_mode": "tilemap",
+    "observation_mode": "multi",
     "visual_playback_speed": 1,
     "max_shape_limit": 1000,
     "end_level": 1,
