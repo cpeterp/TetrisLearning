@@ -3,6 +3,7 @@ observations, etc. Input actions are passed via commandline input."""
 
 import json
 
+import numpy as np
 from stable_baselines3.common import env_checker
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -36,7 +37,7 @@ if __name__ == "__main__":
             if action is not None:
                 break
         obs, reward, done, info = env.step([int(action)])
-        print(obs["tilemap"][0, :, :])
+        print(np.reshape(obs["tilemap"][0, :], (-1, 10)))
         # print(info)
         print("drop_flag", obs["drop_flag"][0, 0])
         print("height", obs["height"][0, 0])

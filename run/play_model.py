@@ -3,6 +3,7 @@ import multiprocessing
 from pathlib import Path
 import time
 
+import numpy as np
 from stable_baselines3 import A2C
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 
@@ -31,7 +32,7 @@ if __name__ == "__main__":
         action, _state = model.predict(obs, deterministic=True)
         obs, reward, done, info = env.step(action)
         time.sleep(0.05)
-        print(obs["tilemap"][0, :, :])
+        print(np.reshape(obs["tilemap"][0, :], (-1, 10)))
         print("height", obs["height"][0, 0])
         print("next_shape", ml.SHAPE_LOOKUP.get(obs["next_shape"][0], None))
         # print(info)
