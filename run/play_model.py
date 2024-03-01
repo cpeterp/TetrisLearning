@@ -32,4 +32,4 @@ if __name__ == "__main__":
         time.sleep(0.05)
         print(obs[0, :, :, 0])
         # print(info)
-        print(reward)
+        # print(reward)

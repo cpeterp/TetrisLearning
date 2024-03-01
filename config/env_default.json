@@ -5,13 +5,16 @@
     "max_shape_limit": 1000,
     "end_level": 1,
     "end_score": 999999,
+    "end_height": 18,
+    "negetive_endgame": "gameover",
     "positive_endgame": "level",
     "run_headless": true,
     "reward_per_score": 0,
     "reward_per_line": 10,
     "reward_per_filled_tiles": 0.5,
-    "reward_gameover": 0,
     "reward_positive_endgame": 10,
+    "reward_negetive_endgame": -10,
     "actions_per_second": 2,
-    "cpu_episode_count_mod": -1
+    "cpu_episode_count_mod": -1,
+    "truncate_play_area": false
 }

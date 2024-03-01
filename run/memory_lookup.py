@@ -60,3 +60,15 @@ GAME_LEVEL_ADDR = 0xFFA9
 ACTIVE_SHAPE_FLAG_ADDR = 0xC200
 INACTIVE_SHAPE_FLAG = 0x80
 ACTIVE_SHAPE_FLAG = 0x00
+
+# Tetris has a timer that counts down frames until the shape drops a level. Each
+# level has a different delay, and this value is stored next to it. When the
+# timer equals the delay, we know the shape will drop on the next frame.
+DROP_TIMER_ADDR = 0xFF99
+DROP_DELEAY_ADDR = 0xFF9A
+
+DROP_STATE_ADRR = 0xFF98
+SHAPE_DROPPING = 0x00
+SHAPE_DROPPED = 0x02  # i.e. hit bottom
+# Maintains this state until the next shape falls (plus 2 frames)
+NEXT_SHAPE_PENDING = 0x03
