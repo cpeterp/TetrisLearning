@@ -33,8 +33,8 @@ if __name__ == "__main__":
         "MultiInputPolicy",
         env,
         verbose=1,
-        n_steps=20,
-        gamma=0.9999,
+        n_steps=30,
+        gamma=0.999999,
         # policy_kwargs={"features_extractor_class": TilemapCNN},
     )
     model.learn(total_timesteps=500000, progress_bar=True)

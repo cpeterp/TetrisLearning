@@ -7,6 +7,7 @@ from stable_baselines3 import A2C
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 
 import common as cm
+import memory_lookup as ml
 from tetris_gym import TetrisGymEnv, make_env
 
 if __name__ == "__main__":
@@ -31,5 +32,9 @@ if __name__ == "__main__":
         obs, reward, done, info = env.step(action)
         time.sleep(0.05)
         print(obs["tilemap"][0, :, :])
+        print("height", obs["height"][0, 0])
+        print("next_shape", ml.SHAPE_LOOKUP.get(obs["next_shape"][0], None))
         # print(info)
-        # print(reward)
+        print(reward)
+
+# TODO: normalize observation, add layer to policy, flatten tilemap obs, monitor model, then try truncating scene

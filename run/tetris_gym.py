@@ -106,8 +106,7 @@ class TetrisGymEnv(Env):
 
         # Setup the observation space
         tm_output_shape = (
-            self.tm_y_end - (self.tm_y_start + self.truncate_amount),
-            self.tm_x_end - self.tm_x_start,
+            (self.tm_y_end - (self.tm_y_start + self.truncate_amount)) * (self.tm_x_end - self.tm_x_start),
             # 1,
         )
         tm_observation_space = spaces.Box(
@@ -275,7 +274,7 @@ class TetrisGymEnv(Env):
         # TODO: Consider adding a timer for how many actions until drop, or any timer
         self.current_tilemap = self._get_tilemap_obs()
         if self.observation_mode == "tilemap":
-            return self.current_tilemap
+            return self.current_tilemap.flatten()
         elif self.observation_mode == "rgb_array":
             self.current_rgb_array = self._get_rgb_array_obs()
             return self.current_rgb_array
@@ -331,7 +330,7 @@ class TetrisGymEnv(Env):
         height = np.array([self._get_pile_height()], dtype=int)
         drop_flag = np.array([self._shape_will_drop()], dtype=int)
         obs_dict = {
-            "tilemap": self.current_tilemap,
+            "tilemap": self.current_tilemap.flatten(),
             "height": height,
             "drop_flag": drop_flag,
             "next_shape": next_shape,
