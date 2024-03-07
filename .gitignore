@@ -2,9 +2,6 @@
 .env
 .conda
 
-# Notebooks for testing
-*.ipynb
-
 # Gameboy ROM files
 *.gb
 *.ram
@@ -12,6 +9,8 @@
 # Run data
 data/variable_starting_states
 data/sessions
+data/logs
+board/
 
 # Temp files
 ~*

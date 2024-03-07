@@ -32,6 +32,7 @@ LINES_CLEARED_ADDR_2 = 0xFFE7
 SCREEN_STATE_ADDR = 0xFFE1
 GAMEOVER_SCREEN_STATE = 0x04
 GAMEOVER_ANIMATION_SCREEN_STATE = 0x0D
+GAME_STATE = 0x00  # 0 during gameplay, switches during gameover, title, etc.
 
 # Game Level
 GAME_LEVEL_ADDR = 0xFFA9
@@ -47,7 +48,6 @@ ACTIVE_SHAPE_FLAG = 0x00
 # timer equals the delay, we know the shape will drop on the next frame.
 DROP_TIMER_ADDR = 0xFF99
 DROP_DELEAY_ADDR = 0xFF9A
-
 DROP_STATE_ADRR = 0xFF98
 SHAPE_DROPPING = 0x00
 SHAPE_DROPPED = 0x02  # i.e. hit bottom

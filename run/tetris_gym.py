@@ -3,6 +3,7 @@ from pathlib import Path
 import random
 from typing import Any, SupportsFloat, Tuple, Dict, List, Union
 
+import cv2
 from gymnasium import Env, spaces
 from gymnasium.core import RenderFrame
 import numpy as np
@@ -29,18 +30,18 @@ class TetrisGymEnv(Env):
         self.is_gameover = False
         self.is_max_score = False
         self.current_tilemap = None
-        self.current_rgb_array = None
+        self.screen_memory = np.zeros((72, 80, 3), dtype=np.uint8)
 
         # Pulled from config
         self.visual_playback_speed = config.get("visual_playback_speed")
         self.max_shape_limit = config.get("max_shape_limit")
         self.actions_per_second = config.get("actions_per_second")
         self.run_headless = config.get("run_headless")
-        self.reward_per_score = config.get("reward_per_score")
-        self.reward_per_line = config.get("reward_per_line")
-        self.reward_per_filled_tiles = config.get("reward_per_filled_tiles")
-        self.reward_negetive_endgame = config.get("reward_negetive_endgame")
-        self.reward_positive_endgame = config.get("reward_positive_endgame")
+        self.reward_per_score = config.get("reward_per_score", 0)
+        self.reward_per_line = config.get("reward_per_line", 0)
+        self.reward_per_filled_tiles = config.get("reward_per_filled_tiles", 0)
+        self.reward_negetive_endgame = config.get("reward_negetive_endgame", 0)
+        self.reward_positive_endgame = config.get("reward_positive_endgame", 0)
         self.end_level = config.get("end_level")
         self.end_score = config.get("end_score")
         self.end_height = config.get("end_height")
@@ -106,7 +107,8 @@ class TetrisGymEnv(Env):
 
         # Setup the observation space
         tm_output_shape = (
-            (self.tm_y_end - (self.tm_y_start + self.truncate_amount)) * (self.tm_x_end - self.tm_x_start),
+            (self.tm_y_end - (self.tm_y_start + self.truncate_amount))
+            * (self.tm_x_end - self.tm_x_start),
             # 1,
         )
         tm_observation_space = spaces.Box(
@@ -116,8 +118,8 @@ class TetrisGymEnv(Env):
             dtype=np.uint8,
         )
         ra_output_shape = (
-            160,
-            144,
+            72,
+            80,
             3,
         )
         ra_observation_space = spaces.Box(
@@ -134,10 +136,11 @@ class TetrisGymEnv(Env):
         elif self.observation_mode == "multi":
             self.observation_space = spaces.Dict(
                 {
-                    "tilemap": tm_observation_space,
-                    "height": spaces.Box(0, 17, dtype=int),
+                    "rgb_array": ra_observation_space,
+                    # "tilemap": tm_observation_space,
+                    # "height": spaces.Box(0, 17, dtype=int),
                     "drop_flag": spaces.Box(0, 1, dtype=int),
-                    "next_shape": spaces.Discrete(8),  # 7 shapes plus none
+                    # "next_shape": spaces.Discrete(8),  # 7 shapes plus none
                 }
             )
         else:
@@ -145,10 +148,10 @@ class TetrisGymEnv(Env):
                 f"Observation mode {self.observation_mode} is not valid."
             )
 
-        self.hold_frames = cm.FPS // self.actions_per_second
-        if self.hold_frames < 2:
+        self.skip_frames = cm.FPS // self.actions_per_second
+        if self.skip_frames < 2:
             raise ValueError(
-                "Provided actions_per_second is too high, must be equal/less than 2x FPS."
+                "Provided actions_per_second is too high, must be equal/less than 1/2 FPS."
             )
         self.starting_state_paths = self._get_starting_state_paths()
 
@@ -161,9 +164,7 @@ class TetrisGymEnv(Env):
             disable_input=True,
         )
         self.botsupport_manager = self.pyboy.botsupport_manager()
-        # TODO: Only define this if we need to
         self.screen = self.botsupport_manager.screen()
-
         self.pyboy.set_emulation_speed(
             0 if self.run_headless else self.visual_playback_speed
         )
@@ -197,6 +198,7 @@ class TetrisGymEnv(Env):
         self.is_max_score = False
         self.current_tilemap = None
         self.current_rgb_array = None
+        self.screen_memory = np.zeros((72, 80, 3), dtype=np.uint8)
 
         # TODO: Need to set up recording here to replay attempts
 
@@ -233,8 +235,13 @@ class TetrisGymEnv(Env):
         While the Env class supports multiple render modes, this implementation
         only supports none or rgb_array"""
         if self.render_mode == "rgb_array":
-            game_pixels_render = self.screen.screen_ndarray()  # (144, 160, 3)
-            return game_pixels_render
+            rgb_arr_obs = self.screen_memory
+            obs_frames = [
+                rgb_arr_obs[:, :, n] for n in range(rgb_arr_obs.shape[2])
+            ]
+            pixel_render = np.concatenate(obs_frames, axis=0)
+            # TODO set up render streaming
+            return pixel_render
         elif self.render_mode is None:
             return None
         else:
@@ -255,7 +262,7 @@ class TetrisGymEnv(Env):
         self.pyboy.tick()
         if button_release:
             self.pyboy.send_input(button_release)
-        for _ in range(0, self.hold_frames - 1):
+        for _ in range(0, self.skip_frames - 1):
             self.pyboy.tick()
         return None
 
@@ -270,14 +277,16 @@ class TetrisGymEnv(Env):
         IDs to reduce dimensionality, and overlays the sprite tiles. This
         results in the simplest view of the game screen without losing
         information loss."""
-        # TODO: Consider adding a memory
         # TODO: Consider adding a timer for how many actions until drop, or any timer
-        self.current_tilemap = self._get_tilemap_obs()
+        # if self.truncate_play_area:
+        # # while highest point of sprite is greater than or equal to max_height
+        # # self.pyboy.tick()
+
         if self.observation_mode == "tilemap":
+            self.current_tilemap = self._get_tilemap_obs()
             return self.current_tilemap.flatten()
         elif self.observation_mode == "rgb_array":
-            self.current_rgb_array = self._get_rgb_array_obs()
-            return self.current_rgb_array
+            return self._get_rgb_array_obs()
         elif self.observation_mode == "multi":
             return self._get_multi_obs()
         else:
@@ -285,8 +294,17 @@ class TetrisGymEnv(Env):
                 f"Observation mode {self.observation_mode} is not valid. Could not generate an observation"
             )
 
-    def _get_rgb_array_obs(self):
-        return self.screen.screen_ndarray()
+    def _get_rgb_array_obs(self) -> NDArray[np.uint8]:
+        """Gets a screen grab of the emulator, extracts luma chanel, and resizes. returns a 80,72,1 NDArray"""
+        img_arr = self.screen.screen_ndarray()
+        img_arr = cv2.cvtColor(img_arr, cv2.COLOR_RGB2YCR_CB)
+        img_arr = cv2.extractChannel(img_arr, 0)
+        img_arr = cv2.resize(img_arr, dsize=(80, 72))
+        img_arr = np.concatenate(
+            (img_arr[:, :, np.newaxis], self.screen_memory[:, :, 0:2]), axis=2
+        )
+        self.screen_memory = img_arr
+        return img_arr
 
     def _get_tilemap_obs(self):
         tile_size_px = 8
@@ -313,11 +331,9 @@ class TetrisGymEnv(Env):
                 tilemap[sp_y, sp_x] = tl.OBS_SPRITE_TILE
         tilemap = tilemap.astype(np.uint8, copy=False)
         # Subset observation to play area
-        # newaxis makes this a 3D array (expected for images)
         tilemap = tilemap[
             self.tm_y_start + self.truncate_amount : self.tm_y_end,
             self.tm_x_start : self.tm_x_end,
-            # np.newaxis,
         ]
         return tilemap
 
@@ -330,10 +346,11 @@ class TetrisGymEnv(Env):
         height = np.array([self._get_pile_height()], dtype=int)
         drop_flag = np.array([self._shape_will_drop()], dtype=int)
         obs_dict = {
-            "tilemap": self.current_tilemap.flatten(),
-            "height": height,
+            # "tilemap": self.current_tilemap.flatten(),
+            "rgb_array": self._get_rgb_array_obs(),
+            # "height": height,
             "drop_flag": drop_flag,
-            "next_shape": next_shape,
+            # "next_shape": next_shape,
         }
         return obs_dict
 
@@ -363,57 +380,73 @@ class TetrisGymEnv(Env):
         self,
         termination_reason: Union[str, None] = None,
     ):
+        reward = 0
+
         # Calculate score from score
         new_score = self._get_current_score()
         score_diff = new_score - self.score
         self.score = new_score
+        reward += score_diff * self.reward_per_score
 
         # Calculate score form cleared line
         lines_cleared = self._get_lines_cleared()
         lines_diff = lines_cleared - self.lines_cleared
         self.lines_cleared = lines_cleared
+        reward += lines_diff * self.reward_per_line
 
         # Calculate score from observation
         # New tiles in the last line receive score
-        last_line = self.current_tilemap[-1, :]
-        filled_tiles = (
-            (last_line == tl.OBS_SHAPE_TILE) | (last_line == tl.OBS_SHAPE_TILE)
-        ).sum()
-        # Only grant positive reward for filled tiles
-        if filled_tiles > self.filled_tiles:
-            filled_lines_diff = filled_tiles - self.filled_tiles
-        else:
-            filled_lines_diff = 0
-        self.filled_tiles = filled_tiles
+        if (
+            self.reward_per_filled_tiles > 0
+            and self.pyboy.get_memory_value(ml.SCREEN_STATE_ADDR)
+            == ml.GAME_STATE
+        ):
+            tilemap = self.botsupport_manager.tilemap_background()[:, :]
+            last_line = np.array(tilemap)[
+                self.tm_y_end - 1,
+                self.tm_x_start : self.tm_x_end,
+            ]
+            filled_tiles = np.isin(last_line, tl.TILEMAP_SHAPE_TILES).sum(
+                axis=0
+            )
+            # # This mod gives a higher reward the more tiles aleady filled
+            # filled_tiles_reward_mod = 1.05
+
+            # Only grant positive reward for filled tiles
+            if filled_tiles > self.filled_tiles:
+                filled_tiles_diff = filled_tiles - self.filled_tiles
+            else:
+                filled_tiles_diff = 0
+            self.filled_tiles = filled_tiles
+            reward += (
+                filled_tiles_diff
+                * self.reward_per_filled_tiles
+                # * (filled_tiles_reward_mod ** (filled_tiles - 1))
+            )
 
         # Calculate score from endstates
-        endgame_reward_lookup = {
-            "gameover": self.reward_negetive_endgame,
-            "end_height": self.reward_negetive_endgame,
-            "end_score": self.reward_positive_endgame,
-            "end_level": self.reward_positive_endgame,
-        }
-        endgame_reward = endgame_reward_lookup.get(termination_reason, 0)
+        if termination_reason is not None:
+            endgame_reward_lookup = {
+                "gameover": self.reward_negetive_endgame,
+                "end_height": self.reward_negetive_endgame,
+                "end_score": self.reward_positive_endgame,
+                "end_level": self.reward_positive_endgame,
+            }
+            endgame_reward = endgame_reward_lookup.get(termination_reason, 0)
+            reward += endgame_reward
 
-        # Total reward per round
-        reward = (
-            score_diff * self.reward_per_score
-            + lines_diff * self.reward_per_line
-            + filled_lines_diff * self.reward_per_filled_tiles
-            + endgame_reward
-        )
         return reward
 
     def _is_truncated(self):
         """Checks if the episode should be truncated due to a neutral limit,
         i.e. shape count or max sore."""
-        self.shape_count = self._get_shape_count()
-        if self.shape_count >= self.max_shape_limit:
+        if self.max_shape_limit is not None:
+            self.shape_count = self._get_shape_count()
+            if self.shape_count >= self.max_shape_limit:
+                return True
+        if self.score >= self.max_score:
             return True
-        elif self.score >= self.max_score:
-            return True
-        else:
-            return False
+        return False
 
     def _get_info(self) -> Dict:
         """Returns information about the game that is not required for observations."""
@@ -544,23 +577,27 @@ class TetrisGymEnv(Env):
         timer = self.pyboy.get_memory_value(ml.DROP_TIMER_ADDR)
 
         # Returns true if the shape will be lower after the next step
-        if ((timer + 1) % (delay + 1)) - self.hold_frames <= 0:
+        if ((timer + 1) % (delay + 1)) - self.skip_frames <= 0:
             return True
         return False
 
     def _get_pile_height(self) -> int:
         """Gets the distance from the ceiling to the top of the pile. The pile
-        has a minimum height of o and a max height of 17 (the last tile can't be
+        has a minimum height of 0 and a max height of 17 (the last tile can't be
         filled)."""
-        if self.current_tilemap is None:
-            tilemap_obs = self._get_tilemap_obs()
+        tilemap = self.botsupport_manager.tilemap_background()[:, :]
+
+        tilemap = np.array(tilemap)[
+            self.tm_y_start + self.truncate_amount : self.tm_y_end,
+            self.tm_x_start : self.tm_x_end,
+        ]
+        filled_rows = np.isin(tilemap, tl.TILEMAP_SHAPE_TILES).sum(axis=1)
+        filled_row_coords = np.where(filled_rows > 0)
+        if len(filled_row_coords[0]) < 1:
+            height = 0
         else:
-            tilemap_obs = self.current_tilemap
-        pile_coords = np.where(tilemap_obs == tl.OBS_SHAPE_TILE)
-        if len(pile_coords[0]) < 1:
-            return 0
-        # Row index 0 corresponds to tile w/ height 18
-        height = 18 - pile_coords[0][0]
+            # Row index 0 corresponds to tile w/ height 18
+            height = 18 - filled_row_coords[0][0]
         return height
 
     # Scratch

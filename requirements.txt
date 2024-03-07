@@ -8,4 +8,5 @@ gmynasium
 stable-baselines3==2.2.1
 opencv-python
 pygame
+tensorboard
 tqdm

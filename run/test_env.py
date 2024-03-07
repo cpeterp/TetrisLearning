@@ -28,6 +28,7 @@ if __name__ == "__main__":
     env_checker.check_env(TetrisGymEnv(env_config))
     env = DummyVecEnv([make_env(0, env_config)])
     obs = env.reset()
+    tot_reward = 0
     for i in range(1000):
         while True:
             inpt = input(
@@ -37,11 +38,13 @@ if __name__ == "__main__":
             if action is not None:
                 break
         obs, reward, done, info = env.step([int(action)])
-        print(np.reshape(obs["tilemap"][0, :], (-1, 10)))
+        tot_reward += reward[0]
+        obs_tm = env.env_method("_get_tilemap_obs", indices=0)
+        print(obs_tm[0])
         # print(info)
         print("drop_flag", obs["drop_flag"][0, 0])
-        print("height", obs["height"][0, 0])
-        print("next_shape", ml.SHAPE_LOOKUP.get(obs["next_shape"][0], None))
-        print("reward", reward[0])
+        # print("height", obs["height"][0, 0])
+        # print("next_shape", ml.SHAPE_LOOKUP.get(obs["next_shape"][0], None))
+        print("reward", tot_reward)
         print("done", done[0])
         print("step", i)
