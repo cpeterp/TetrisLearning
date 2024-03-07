@@ -10,7 +10,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor
 import common as cm
 from save_best_model_callback import SaveOnBestTrainingRewardCallback
 from tetris_gym import TetrisGymEnv, make_env
-from tilemap_policy import TilemapCNN
+from utils import linear_schedule
 
 if __name__ == "__main__":
     curr_time = datetime.now(pytz.timezone(cm.LOCAL_TZ))
@@ -24,8 +24,6 @@ if __name__ == "__main__":
 
     # Set number of CPUs dynamically
     num_cpu = multiprocessing.cpu_count()
-    # Adjust number of episode incase we need free CPUs
-    num_episodes = num_cpu + env_config["cpu_episode_count_mod"]
 
     env_checker.check_env(TetrisGymEnv(env_config))
     env = VecMonitor(
@@ -35,22 +33,33 @@ if __name__ == "__main__":
 
     # Set learning vars
     gamma = 0.99
-    learning_rate = 0.0003
-    n_steps = 2048
+    learning_rate = 2.5e-4
+    n_steps = 128
+    ent_coef = 0.01
+    vf_coef = 0.5
+    clip_range = 0.1
+    gae_lambda = 0.95
+    batch_size = 256
+    n_epochs = 3
 
     # model = PPO(
     #     "MultiInputPolicy",
     #     env,
     #     verbose=1,
+    #     n_epochs=n_epochs,
     #     n_steps=n_steps,
     #     gamma=gamma,
-    #     learning_rate=learning_rate,
-    #     ent_coef=0.1,
+    #     learning_rate=linear_schedule(learning_rate),
+    #     vf_coef=vf_coef,
+    #     ent_coef=ent_coef,
+    #     clip_range=linear_schedule(clip_range),
+    #     gae_lambda=gae_lambda,
+    #     batch_size=batch_size,
     #     tensorboard_log=cm.TENSORBOARD_LOG_DIR,
     #     policy_kwargs={"features_extractor_kwargs": {"cnn_output_dim": 512}},
     # )
 
-    model = A2C.load(cm.BEST_MODEL_PATH, env=env)
+    model = PPO.load(cm.BEST_MODEL_PATH, env=env)
 
     callback = SaveOnBestTrainingRewardCallback(
         check_freq=100,
@@ -61,7 +70,8 @@ if __name__ == "__main__":
         f"PPO_{str(gamma)[2:]}_{str(learning_rate)[2:]}_{str(n_steps)}"
     )
     model.learn(
-        total_timesteps=5_000_000,
+        total_timesteps=n_steps * num_cpu * 1000,
+        log_interval=5,
         progress_bar=True,
         callback=callback,
         tb_log_name=tb_log_name,
