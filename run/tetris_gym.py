@@ -26,22 +26,31 @@ class TetrisGymEnv(Env):
         self.lines_cleared = 0
         self.shape_count = 0
         self.filled_tiles = 0
+        self.orphaned_tiles = 0
         self.shape_was_active = True
         self.is_gameover = False
         self.is_max_score = False
         self.current_tilemap = None
-        self.screen_memory = np.zeros((72, 80, 3), dtype=np.uint8)
+        self.screen_memory = np.zeros(
+            (72, 80, self.stack_frames), dtype=np.uint8
+        )
 
         # Pulled from config
         self.visual_playback_speed = config.get("visual_playback_speed")
         self.max_shape_limit = config.get("max_shape_limit")
         self.actions_per_second = config.get("actions_per_second")
         self.run_headless = config.get("run_headless")
-        self.reward_per_score = config.get("reward_per_score", 0)
+        self.stack_frames = config.get("reward_per_score", 4)
+        self.reward_per_score = config.get("reward_per_score", 0.1)
         self.reward_per_line = config.get("reward_per_line", 0)
-        self.reward_per_filled_tiles = config.get("reward_per_filled_tiles", 0)
+        self.reward_per_filled_tiles = config.get(
+            "reward_per_filled_tiles", 0.07
+        )
         self.reward_negetive_endgame = config.get("reward_negetive_endgame", 0)
         self.reward_positive_endgame = config.get("reward_positive_endgame", 0)
+        self.reward_per_orphaned_tile = config.get(
+            "reward_per_orphaned_tile", -0.01
+        )
         self.end_level = config.get("end_level")
         self.end_score = config.get("end_score")
         self.end_height = config.get("end_height")
@@ -193,12 +202,15 @@ class TetrisGymEnv(Env):
         self.lines_cleared = 0
         self.shape_count = 0
         self.filled_tiles = 0
+        self.orphaned_tiles = 0
         self.shape_was_active = True
         self.is_gameover = False
         self.is_max_score = False
         self.current_tilemap = None
         self.current_rgb_array = None
-        self.screen_memory = np.zeros((72, 80, 3), dtype=np.uint8)
+        self.screen_memory = np.zeros(
+            (72, 80, self.stack_frames), dtype=np.uint8
+        )
 
         # TODO: Need to set up recording here to replay attempts
 
@@ -235,12 +247,12 @@ class TetrisGymEnv(Env):
         While the Env class supports multiple render modes, this implementation
         only supports none or rgb_array"""
         if self.render_mode == "rgb_array":
-            rgb_arr_obs = self.screen_memory
-            obs_frames = [
-                rgb_arr_obs[:, :, n] for n in range(rgb_arr_obs.shape[2])
-            ]
-            pixel_render = np.concatenate(obs_frames, axis=0)
-            # TODO set up render streaming
+            # rgb_arr_obs = self.screen_memory
+            # obs_frames = [
+            #     rgb_arr_obs[:, :, n] for n in range(rgb_arr_obs.shape[2])
+            # ]
+            # pixel_render = np.concatenate(obs_frames, axis=0)
+            pixel_render = self.screen.screen_ndarray()
             return pixel_render
         elif self.render_mode is None:
             return None
@@ -301,7 +313,11 @@ class TetrisGymEnv(Env):
         img_arr = cv2.extractChannel(img_arr, 0)
         img_arr = cv2.resize(img_arr, dsize=(80, 72))
         img_arr = np.concatenate(
-            (img_arr[:, :, np.newaxis], self.screen_memory[:, :, 0:2]), axis=2
+            (
+                img_arr[:, :, np.newaxis],
+                self.screen_memory[:, :, 0 : self.stack_frames - 1],
+            ),
+            axis=2,
         )
         self.screen_memory = img_arr
         return img_arr
@@ -395,34 +411,48 @@ class TetrisGymEnv(Env):
         reward += lines_diff * self.reward_per_line
 
         # Calculate score from observation
+        if self.current_tilemap is not None:
+            # use pre-calculated tilmap if we have it
+            tilemap = self.current_tilemap
+        else:
+            tilemap = self._get_tilemap_obs()
+
         # New tiles in the last line receive score
         if (
             self.reward_per_filled_tiles > 0
             and self.pyboy.get_memory_value(ml.SCREEN_STATE_ADDR)
             == ml.GAME_STATE
         ):
-            tilemap = self.botsupport_manager.tilemap_background()[:, :]
-            last_line = np.array(tilemap)[
-                self.tm_y_end - 1,
-                self.tm_x_start : self.tm_x_end,
-            ]
-            filled_tiles = np.isin(last_line, tl.TILEMAP_SHAPE_TILES).sum(
-                axis=0
-            )
-            # # This mod gives a higher reward the more tiles aleady filled
-            # filled_tiles_reward_mod = 1.05
-
+            last_line = tilemap[-1, :]
+            filled_tiles = (last_line == tl.OBS_SHAPE_TILE).sum(axis=0)
             # Only grant positive reward for filled tiles
             if filled_tiles > self.filled_tiles:
                 filled_tiles_diff = filled_tiles - self.filled_tiles
             else:
                 filled_tiles_diff = 0
             self.filled_tiles = filled_tiles
-            reward += (
-                filled_tiles_diff
-                * self.reward_per_filled_tiles
-                # * (filled_tiles_reward_mod ** (filled_tiles - 1))
-            )
+            reward += filled_tiles_diff * self.reward_per_filled_tiles
+
+        # Orphaned tiles (open tiles below a filled tile) result in a penalty
+        # Filling those tiles results in an equal/opposite reward
+        if (
+            self.reward_per_orphaned_tile != 0
+            and self.pyboy.get_memory_value(ml.SCREEN_STATE_ADDR)
+            == ml.GAME_STATE
+        ):
+            # Find the row of highest shape tile in each column
+            top_filled_rows = np.argmax(tilemap == tl.OBS_SHAPE_TILE, axis=0)
+            # Calculate the sum of blank tiles below that tile per column
+            orphaned_tiles = 0
+            for col in range(self.tm_x_end - self.tm_x_start):
+                top_filled_row = top_filled_rows[col]
+                if top_filled_row > 0:
+                    orphaned_tiles += np.sum(
+                        tilemap[top_filled_row:, col] == tl.OBS_BLANK_TILE
+                    )
+            oprhaned_tile_diff = orphaned_tiles - self.orphaned_tiles
+            self.orphaned_tiles = orphaned_tiles
+            reward += oprhaned_tile_diff * self.reward_per_orphaned_tile
 
         # Calculate score from endstates
         if termination_reason is not None:
