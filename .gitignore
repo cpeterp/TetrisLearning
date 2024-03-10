@@ -2,6 +2,9 @@
 .env
 .conda
 
+# Compiled python files
+__pycache__
+
 # Gameboy ROM files
 *.gb
 *.ram
@@ -15,5 +18,6 @@ board/
 # Temp files
 ~*
 
-# Compiled python files
-__pycache__
+# Hyperparameter tuning temp files
+*.db
+logs/

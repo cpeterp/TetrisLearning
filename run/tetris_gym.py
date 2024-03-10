@@ -2,9 +2,10 @@ import io
 from pathlib import Path
 import random
 from typing import Any, SupportsFloat, Tuple, Dict, List, Union
+import json
 
 import cv2
-from gymnasium import Env, spaces
+from gymnasium import Env, spaces, register, pprint_registry
 from gymnasium.core import RenderFrame
 import numpy as np
 from numpy.typing import NDArray
@@ -21,26 +22,19 @@ class TetrisGymEnv(Env):
         """Main Gymnasium environment for running Tetris. The config options
         allow us to use this for training and for playing back runs in a human-
         readable format"""
-        # Starting values - will change during episode
-        self.score = 0
-        self.lines_cleared = 0
-        self.shape_count = 0
-        self.filled_tiles = 0
-        self.orphaned_tiles = 0
-        self.shape_was_active = True
-        self.is_gameover = False
-        self.is_max_score = False
-        self.current_tilemap = None
-        self.screen_memory = np.zeros(
-            (72, 80, self.stack_frames), dtype=np.uint8
-        )
-
         # Pulled from config
+        if isinstance(config, str):
+            config_path = Path.cwd() / config
+            with open(config_path) as F:
+                config = json.load(F)
+        if not isinstance(config, dict):
+            raise ValueError
+
         self.visual_playback_speed = config.get("visual_playback_speed")
         self.max_shape_limit = config.get("max_shape_limit")
         self.actions_per_second = config.get("actions_per_second")
         self.run_headless = config.get("run_headless")
-        self.stack_frames = config.get("reward_per_score", 4)
+        self.stack_frames = config.get("stack_frames", 4)
         self.reward_per_score = config.get("reward_per_score", 0.1)
         self.reward_per_line = config.get("reward_per_line", 0)
         self.reward_per_filled_tiles = config.get(
@@ -64,6 +58,20 @@ class TetrisGymEnv(Env):
         self.observation_mode = config.get("observation_mode", "tilemap")
         # If true, uses the end_height+1 as the observation height
         self.truncate_play_area = config.get("truncate_play_area", False)
+
+        # Starting values - will change during episode
+        self.score = 0
+        self.lines_cleared = 0
+        self.shape_count = 0
+        self.filled_tiles = 0
+        self.orphaned_tiles = 0
+        self.shape_was_active = True
+        self.is_gameover = False
+        self.is_max_score = False
+        self.current_tilemap = None
+        self.screen_memory = np.zeros(
+            (72, 80, self.stack_frames), dtype=np.uint8
+        )
 
         # Calculate max reward
         training_level = 0  # Level currently being trained
@@ -129,7 +137,7 @@ class TetrisGymEnv(Env):
         ra_output_shape = (
             72,
             80,
-            3,
+            self.stack_frames,
         )
         ra_observation_space = spaces.Box(
             low=0,

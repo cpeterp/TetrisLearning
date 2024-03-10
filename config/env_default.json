@@ -5,11 +5,13 @@
     "positive_endgame": "score",
     "run_headless": true,
     "render_mode": "rgb_array",
-    "reward_per_score": 0.1,
+    "reward_per_score": 0.13,
     "reward_per_line": 0,
     "reward_per_filled_tiles": 0.07,
+    "reward_per_orphaned_tile": -0.013,
     "reward_positive_endgame": 1,
     "reward_negetive_endgame": -1,
     "actions_per_second": 3,
-    "cpu_episode_count_mod": 0
+    "cpu_episode_count_mod": 0,
+    "stack_frames": 1
 }

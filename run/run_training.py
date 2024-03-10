@@ -59,16 +59,14 @@ if __name__ == "__main__":
     #     policy_kwargs={"features_extractor_kwargs": {"cnn_output_dim": 512}},
     # )
 
-    model = PPO.load(cm.BEST_MODEL_PATH, env=env)
+    model = PPO.load("./data/logs/best_model.zip", env=env, gamma=0.994)
 
     callback = SaveOnBestTrainingRewardCallback(
         check_freq=100,
         log_dir=cm.LOG_DIR,
     )
 
-    tb_log_name = (
-        f"PPO_{str(gamma)[2:]}_{str(learning_rate)[2:]}_{str(n_steps)}"
-    )
+    tb_log_name = f"{session_id}"
     model.learn(
         total_timesteps=n_steps * num_cpu * 1000,
         log_interval=5,
