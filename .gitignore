@@ -21,3 +21,4 @@ board/
 # Hyperparameter tuning temp files
 *.db
 logs/
+*.backup

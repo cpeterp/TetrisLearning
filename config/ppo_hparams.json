@@ -1,0 +1,14 @@
+{
+    "batch_size": 128,
+    "n_steps": 1024,
+    "gamma": 0.999,
+    "learning_rate": 0.00028,
+    "ent_coef": 4.4e-5,
+    "clip_range": 0.1,
+    "n_epochs": 10,
+    "gae_lambda": 1.0,
+    "max_grad_norm": 0.7,
+    "vf_coef": 0.57,
+    "net_arch": "tiny",
+    "activation_fn": "relu"
+}

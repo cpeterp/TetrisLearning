@@ -27,6 +27,7 @@ class TetrisGymEnv(Env):
             config_path = Path.cwd() / config
             with open(config_path) as F:
                 config = json.load(F)
+                F.close()
         if not isinstance(config, dict):
             raise ValueError
 
@@ -288,6 +289,7 @@ class TetrisGymEnv(Env):
 
     def close(self):
         self.pyboy.send_input(WindowEvent.QUIT)
+        self.pyboy.stop(save=False)
         return None
 
     def _get_observation(self) -> NDArray[np.int_]:
