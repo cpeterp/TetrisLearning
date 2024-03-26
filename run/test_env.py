@@ -34,9 +34,19 @@ if __name__ == "__main__":
             inpt = input(
                 "Choose Action: [a] Left, [d] Right, [w] Rot Left [s] Rot Right [ ] None: "
             )
-            action = inpt_lu.get(inpt, None)
-            if action is not None:
+            if inpt in inpt_lu.keys():
+                action = inpt_lu.get(inpt, None)
                 break
+            try:
+                int_inpt = int(inpt)
+                for _ in range(int_inpt - 1):
+                    obs, reward, done, info = env.step([4])
+                    tot_reward += reward[0]
+                action = 4
+                break
+            except:
+                pass
+
         obs, reward, done, info = env.step([int(action)])
         tot_reward += reward[0]
         obs_tm = env.env_method("_get_tilemap_obs", indices=0)

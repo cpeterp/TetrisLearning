@@ -7,11 +7,11 @@
     "render_mode": "rgb_array",
     "reward_per_score": 0.15,
     "reward_per_line": 0,
-    "reward_per_filled_tiles": 0.1,
-    "reward_per_orphaned_tile": -0.4,
+    "reward_per_filled_tiles": 0,
+    "reward_per_orphaned_tile": -0.1,
     "reward_positive_endgame": 1,
     "reward_negetive_endgame": -1,
-    "actions_per_second": 4,
+    "actions_per_second": 6,
     "cpu_episode_count_mod": 0,
     "stack_frames": 4
 }
